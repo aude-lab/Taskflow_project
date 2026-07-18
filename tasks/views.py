@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from core.queries import get_user_tasks
 from django.db.models import Count
 from django.utils import timezone
 from rest_framework import viewsets
@@ -29,9 +30,7 @@ class TaskViewSet(viewsets.ModelViewSet):
     filterset_class = TaskFilter
 
     def get_queryset(self):
-        return Task.objects.filter(
-            project__owner=self.request.user
-        ).select_related("project")
+        return get_user_tasks(self.request.user)
 
 
 class DashboardView(APIView):
@@ -45,9 +44,7 @@ class DashboardView(APIView):
     permission_classes = [IsAuthenticated]
 
     def base_queryset(self):
-        return Task.objects.filter(
-            project__owner=self.request.user
-        ).select_related("project")
+        return get_user_tasks(self.request.user)
 
     def _apply_filter(self, base, params):
         # Réutilise TaskFilter (tasks/filters.py) plutôt que de réécrire les
