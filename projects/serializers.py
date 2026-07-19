@@ -19,7 +19,7 @@ class ProjectSerializer(serializers.ModelSerializer):
 
     def validate_name(self, value):
         user = self.context["request"].user
-        queryset = Project.objects.filter(owner=user, name=value)
+        queryset = Project.objects.for_user(user).filter(name=value)
         # En update, exclure l'instance courante pour autoriser un enregistrement
         # qui conserve son propre nom.
         if self.instance is not None:

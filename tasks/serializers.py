@@ -31,7 +31,7 @@ class TaskSerializer(serializers.ModelSerializer):
 
     def get_fields(self):
         fields = super().get_fields()
-        fields["project"].queryset = Project.objects.filter(
-            owner=self.context["request"].user
+        fields["project"].queryset = Project.objects.for_user(
+            self.context["request"].user
         )
         return fields

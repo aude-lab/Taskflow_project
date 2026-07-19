@@ -2,6 +2,20 @@ from django.conf import settings
 from django.db import models
 
 
+class ProjectQuerySet(models.QuerySet):
+    """QuerySet de Project, porteur de la règle d'appartenance.
+
+    `for_user()` est la source de vérité unique du « qui voit quoi » côté
+    projets : elle est utilisée par les ViewSets DRF, les serializers et les
+    futures vues Django classiques, pour qu'aucune de ces couches ne
+    réimplémente la règle de son côté.
+    """
+
+    def for_user(self, user):
+        """Projets dont `user` est propriétaire."""
+        return self.filter(owner=user)
+
+
 class Project(models.Model):
     """Projet appartenant à un utilisateur, conteneur de tâches (V1 solo)."""
 
@@ -14,6 +28,8 @@ class Project(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    objects = ProjectQuerySet.as_manager()
 
     class Meta:
         ordering = ["-created_at"]

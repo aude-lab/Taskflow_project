@@ -94,11 +94,15 @@ class Task(models.Model):
   ```
   def get_fields(self):
       fields = super().get_fields()
-      fields["project"].queryset = Project.objects.filter(
-          owner=self.context["request"].user
+      fields["project"].queryset = Project.objects.for_user(
+          self.context["request"].user
       )
       return fields
   ```
+
+  Noter le `for_user()` : le serializer réutilise le **manager de l'app**
+  (cf. §3), il ne réécrit pas le filtre. C'est ce qui garantit que chemin de
+  lecture et chemin d'écriture ne peuvent pas diverger.
 
   DRF rejette alors lui-même tout pk hors queryset (`does_not_exist` → 400),
   **en create comme en update**. Un objet d'autrui devient indiscernable d'un
@@ -117,9 +121,17 @@ class Task(models.Model):
 
 - Un `ModelViewSet` par ressource, `permission_classes = [IsAuthenticated]`.
 - **`get_queryset()` filtre TOUJOURS par utilisateur courant** — c'est la règle
-  de sécurité centrale de la V1 :
-  - Project : `Project.objects.filter(owner=self.request.user)`.
-  - Task : `Task.objects.filter(project__owner=self.request.user)`.
+  de sécurité centrale de la V1. **Ne pas réécrire l'expression du filtre à la
+  main : elle vit dans un manager custom de l'app, `Model.objects.for_user()`**
+  (cf. `core/SPEC-queries.md`), pour que ViewSets, serializers et vues front
+  partagent la même source et ne divergent pas.
+  - Project : `Project.objects.for_user(self.request.user)`
+    (`ProjectQuerySet.for_user` → `filter(owner=user)`).
+  - Task : `Task.objects.for_user(self.request.user)`
+    (`TaskQuerySet.for_user` → `filter(project__owner=user).select_related("project")`).
+  - **Nouvelle ressource** : lui donner son propre `XQuerySet.for_user(user)`
+    dans son `models.py`, exposé par `objects = XQuerySet.as_manager()` — et
+    l'utiliser partout, y compris dans les serializers (cf. §2).
 - **`perform_create()` fixe l'owner côté serveur** :
   `serializer.save(owner=self.request.user)` pour Project. Ne jamais faire
   confiance à un `owner` envoyé par le client.
@@ -197,7 +209,7 @@ Les trois incidents, même famille :
   `validate_project()` maison tentait de rejeter ceux d'autrui. Deux fuites :
   - son **queryset** portait sur `Project.objects.all()`, donc un projet
     d'autrui était distinguable d'un pk inexistant. **Fix : restreindre le
-    queryset du champ** à `Project.objects.filter(owner=request.user)` (cf. §2)
+    queryset du champ** à `Project.objects.for_user(request.user)` (cf. §2)
     → objet d'autrui indiscernable de l'inexistant, par construction.
   - elle **recopiait à la main** le message d'erreur de DRF pour « camoufler »
     le cas. Mais `LANGUAGE_CODE='en-us'` : DRF répond `Invalid pk "3" - object

@@ -1,6 +1,23 @@
 from django.db import models
 
 
+class TaskQuerySet(models.QuerySet):
+    """QuerySet de Task, porteur de la règle d'appartenance.
+
+    `for_user()` est la source de vérité unique du « qui voit quoi » côté
+    tâches : elle est utilisée par les ViewSets DRF, le tableau de bord et les
+    futures vues Django classiques.
+    """
+
+    def for_user(self, user):
+        """Tâches rattachées aux projets de `user`.
+
+        L'appartenance est indirecte : elle passe par le projet parent. Le
+        `select_related` évite une requête supplémentaire sur `project`.
+        """
+        return self.filter(project__owner=user).select_related("project")
+
+
 class Task(models.Model):
     """Tâche rattachée à un projet (V1 solo).
 
@@ -40,6 +57,8 @@ class Task(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    objects = TaskQuerySet.as_manager()
 
     class Meta:
         ordering = ["-created_at"]
