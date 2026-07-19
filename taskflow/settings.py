@@ -126,7 +126,10 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+# Le front est en français : les libellés, aides et messages fournis par Django
+# et DRF (validateurs de mot de passe, erreurs de formulaire et d'API) sont
+# traduits en conséquence.
+LANGUAGE_CODE = 'fr-fr'
 
 TIME_ZONE = 'UTC'
 
