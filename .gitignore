@@ -20,3 +20,6 @@ media/
 .vscode/
 .idea/
 .DS_Store
+
+# Config d'outillage locale (chemins absolus, spécifique à la machine)
+.claude/launch.json

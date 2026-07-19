@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 from pathlib import Path
 
+from django.contrib.messages import constants as message_constants
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -147,6 +148,20 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Modèle utilisateur custom (voir accounts/models.py pour la justification).
 AUTH_USER_MODEL = 'accounts.User'
+
+
+# Authentification du front (session Django). Sans rapport avec l'API, qui reste
+# en JWT seul (cf. core/SPEC-front-base.md §3).
+LOGIN_URL = '/connexion/'
+LOGIN_REDIRECT_URL = '/'
+LOGOUT_REDIRECT_URL = '/connexion/'
+
+# Le tag Django pour une erreur est « error », mais la classe Bootstrap est
+# « alert-danger » : sans cette table, messages.error() produirait un
+# `alert-error` inexistant, donc une alerte non stylée.
+MESSAGE_TAGS = {
+    message_constants.ERROR: 'danger',
+}
 
 
 # Django REST Framework : authentification par JWT (djangorestframework-simplejwt).

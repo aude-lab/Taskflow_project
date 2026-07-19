@@ -21,4 +21,7 @@ urlpatterns = [
     # Ressources métier
     path('api/', include('projects.urls')),
     path('api/', include('tasks.urls')),
+    # Front (vues Django classiques, authentification par session)
+    path('', include('accounts.urls_web')),
+    path('', include('core.urls_web')),
 ]
