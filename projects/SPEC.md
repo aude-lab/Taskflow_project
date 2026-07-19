@@ -47,7 +47,7 @@ Forme d'un projet (JSON) :
 ## 4. Règles de permission
 
 - `permission_classes = [IsAuthenticated]`.
-- `get_queryset()` filtre **toujours** : `Project.objects.filter(owner=self.request.user)`.
+- `get_queryset()` filtre **toujours** : `Project.objects.for_user(self.request.user)` (cf. §7).
 - `perform_create()` fixe l'owner : `serializer.save(owner=self.request.user)`.
 - Un projet appartenant à un autre utilisateur est **invisible** : accès en retrieve/update/destroy → **404** (et non 403), car l'objet est hors du queryset. On ne révèle pas son existence.
 
@@ -65,4 +65,36 @@ Forme d'un projet (JSON) :
 
 - **Task** : aucun champ, endpoint ou logique liée aux tâches ici (ressource séparée, sa propre spec).
 - **Collaboratif / V2** : pas de partage, pas de rôle owner/membre, pas d'invitation. Un projet a un unique propriétaire.
+
+## 7. Où vit la règle d'appartenance : `Project.objects.for_user()`
+
+La règle « quels projets appartiennent à `user` » vit à **un seul endroit** : un manager custom dans `projects/models.py`.
+
+```
+class ProjectQuerySet(models.QuerySet):
+    def for_user(self, user):
+        return self.filter(owner=user)
+
+class Project(models.Model):
+    ...
+    objects = ProjectQuerySet.as_manager()
+```
+
+**Tous les sites qui appliquent cette règle passent par elle** — chemin de lecture *et* chemin d'écriture, pour qu'ils ne puissent pas diverger :
+
+| Fichier | Site | Appel |
+|---------|------|-------|
+| `projects/views.py` | `ProjectViewSet.get_queryset()` | `Project.objects.for_user(user)` |
+| `projects/serializers.py` | `validate_name()` — unicité par propriétaire | `Project.objects.for_user(user).filter(name=value)` |
+| `tasks/serializers.py` | `get_fields()` — restriction de la FK `project` | `Project.objects.for_user(user)` |
+
+Le troisième site vit dans l'app `tasks`, mais applique bien la règle d'appartenance **des projets** : c'est ce qui empêche de rattacher une tâche au projet d'autrui (cf. `tasks/SPEC.md` §2).
+
+**Pourquoi un manager plutôt qu'un module partagé** (décision actée après review, 2026-07-19) : une première version plaçait ces requêtes dans `core/queries.py`, ce qui faisait dépendre `core` — censé être la feuille du graphe — des apps métier. Le manager supprime ce couplage, place la règle dans l'app qui possède le modèle (« une app = une responsabilité », CLAUDE.md), et reste accessible depuis les serializers sans import supplémentaire.
+
+Précisions :
+- `for_user()` prend un **`user`**, pas une `request` : utilisable depuis un ViewSet DRF comme depuis une vue Django classique (front à venir).
+- `as_manager()` construit une classe de `Manager` dérivée du QuerySet : `for_user()` reste **chaînable** (`.filter()`, `.exclude()`, `.values()`).
+- Elle **suppose un utilisateur authentifié** : l'authentification reste la responsabilité de l'appelant (`IsAuthenticated` côté DRF, `LoginRequiredMixin` côté front à venir). Aucun garde `AnonymousUser` n'est ajouté.
+- **Nouvelle ressource** : lui donner son propre `XQuerySet.for_user(user)` dans son `models.py` et l'utiliser partout (cf. skill `drf-resource`).
 - Pagination, filtres et tri avancés : non traités dans cette spec (au besoin, spec dédiée).

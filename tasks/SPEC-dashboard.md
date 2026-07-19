@@ -62,7 +62,7 @@ Chaque tâche des listes est sérialisée par le `TaskSerializer` existant (mêm
 
 Reprend le **principe général** du skill `drf-resource` (valider/agréger contre le bon périmètre) :
 
-- **Ensemble de départ = `Task.objects.filter(project__owner=request.user)`** (le même que `TaskViewSet.get_queryset`), **jamais** `Task.objects.all()`. Toutes les catégories dérivent de ce queryset : aucune tâche d'autrui ne peut apparaître ni être comptée.
+- **Ensemble de départ = `Task.objects.for_user(request.user)`** (le même manager que `TaskViewSet.get_queryset`, cf. `tasks/SPEC.md` §7), **jamais** `Task.objects.all()`. Toutes les catégories dérivent de ce queryset : aucune tâche d'autrui ne peut apparaître ni être comptée. Passer par le manager plutôt que de réécrire le filtre garantit que le dashboard ne peut pas diverger de la règle appliquée ailleurs.
 - **`aujourd'hui` est calculé côté serveur** via `django.utils.timezone.localdate()` (cohérent avec `TIME_ZONE`/`USE_TZ`). Il ne dépend d'**aucun paramètre de requête, en-tête ou corps** : le client ne peut pas décaler la fenêtre ni sonder d'autres dates.
 - Requête non authentifiée → **401**.
 

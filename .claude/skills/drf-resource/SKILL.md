@@ -123,8 +123,8 @@ class Task(models.Model):
 - **`get_queryset()` filtre TOUJOURS par utilisateur courant** — c'est la règle
   de sécurité centrale de la V1. **Ne pas réécrire l'expression du filtre à la
   main : elle vit dans un manager custom de l'app, `Model.objects.for_user()`**
-  (cf. `core/SPEC-queries.md`), pour que ViewSets, serializers et vues front
-  partagent la même source et ne divergent pas.
+  (cf. `projects/SPEC.md` §7 et `tasks/SPEC.md` §7), pour que ViewSets,
+  serializers et vues front partagent la même source et ne divergent pas.
   - Project : `Project.objects.for_user(self.request.user)`
     (`ProjectQuerySet.for_user` → `filter(owner=user)`).
   - Task : `Task.objects.for_user(self.request.user)`

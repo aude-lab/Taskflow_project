@@ -30,7 +30,7 @@ Définis en `TextChoices` sur le modèle — source de vérité unique, réutili
 - `__str__` retourne `title`.
 - Champs exposés par le serializer (liste blanche, pas de `__all__`) : `id`, `title`, `description`, `status`, `priority`, `due_date`, `project`, `created_at`, `updated_at`.
 - `read_only_fields` : `id`, `created_at`, `updated_at`.
-- `project` est **écrivable** par le client (contrairement à `owner` de Project). Sa sécurité repose sur un **queryset restreint**, pas sur une validation manuelle : le `PrimaryKeyRelatedField` reçoit `Project.objects.filter(owner=request.user)` (l'utilisateur vient du contexte du serializer, fourni par le ViewSet).
+- `project` est **écrivable** par le client (contrairement à `owner` de Project). Sa sécurité repose sur un **queryset restreint**, pas sur une validation manuelle : le `PrimaryKeyRelatedField` reçoit `Project.objects.for_user(request.user)` (l'utilisateur vient du contexte du serializer, fourni par le ViewSet). Le serializer réutilise le manager de l'app `projects` plutôt que de réécrire le filtre (cf. `projects/SPEC.md` §7).
   - Conséquence : un projet hors de ce queryset — inexistant **ou** appartenant à autrui — est rejeté par le mécanisme natif de DRF, avec le même `does_not_exist`. La fuite d'information devient **impossible par construction**, et non par une validation qu'on pourrait oublier ou mal calibrer.
   - Cela **retire le besoin d'écrire `validate_project()`** : aucune validation custom sur ce champ.
   - Bénéfice annexe : l'API browsable ne propose que les projets de l'utilisateur.
@@ -67,8 +67,8 @@ Forme d'une tâche (JSON) :
 
 - `permission_classes = [IsAuthenticated]`.
 - `get_queryset()` filtre **toujours** via le projet parent :
-  `Task.objects.filter(project__owner=self.request.user).select_related('project')`
-  (le `select_related` évite les N+1 lors de la sérialisation de la liste).
+  `Task.objects.for_user(self.request.user)` (cf. §7), qui applique
+  `filter(project__owner=user).select_related('project')`.
 - Pas de `perform_create` : l'appartenance découle du `project`, dont le queryset est restreint dans le serializer.
 - Une tâche d'un autre utilisateur est **invisible** : retrieve/update/destroy → **404** (et non 403), car hors du queryset.
 - Rattacher une tâche au projet d'un autre utilisateur est **impossible** : le projet est hors du queryset du champ, donc rejeté par le **mécanisme natif de DRF** (erreur `does_not_exist` → **400**). Aucune validation custom, aucun message d'erreur écrit à la main : c'est DRF qui produit la réponse, identique à celle d'un projet inexistant. Vaut aussi bien en create qu'en update/PATCH.
@@ -100,3 +100,32 @@ Forme d'une tâche (JSON) :
 - **Pagination** et tri configurable : non traités ici.
 - **Collaboratif / V2** : pas de partage, d'assignation à un autre utilisateur, ni de rôle. Une tâche appartient à l'unique propriétaire de son projet.
 - Modification de la ressource `Project` : hors périmètre (le `related_name='tasks'` est ajouté côté `Task`, sans toucher `projects/`).
+
+## 7. Où vit la règle d'appartenance : `Task.objects.for_user()`
+
+La règle « quelles tâches appartiennent à `user` » vit à **un seul endroit** : un manager custom dans `tasks/models.py`. L'appartenance étant indirecte (elle passe par le projet parent), la règle est plus subtile que celle de `Project` — raison de plus pour ne l'écrire qu'une fois.
+
+```
+class TaskQuerySet(models.QuerySet):
+    def for_user(self, user):
+        return self.filter(project__owner=user).select_related("project")
+
+class Task(models.Model):
+    ...
+    objects = TaskQuerySet.as_manager()
+```
+
+Sites qui l'utilisent :
+
+| Fichier | Site | Appel |
+|---------|------|-------|
+| `tasks/views.py` | `TaskViewSet.get_queryset()` | `Task.objects.for_user(user)` |
+| `tasks/views.py` | `DashboardView.base_queryset()` | `Task.objects.for_user(user)` |
+
+La règle d'appartenance **des projets** vit symétriquement dans `Project.objects.for_user()` (cf. `projects/SPEC.md` §7) ; `tasks/serializers.py` l'utilise pour restreindre la FK `project` (cf. §2).
+
+Précisions :
+- Le `select_related("project")` est **inclus** dans `for_user()`, car tous les appelants l'appliquaient déjà : le conserver garantit un comportement et un nombre de requêtes identiques.
+- `for_user()` prend un **`user`**, pas une `request` : utilisable depuis un ViewSet DRF comme depuis une vue Django classique (front à venir).
+- Elle **suppose un utilisateur authentifié** : l'authentification reste la responsabilité de l'appelant.
+- `for_user()` est aussi exposé sur le related manager, donc `project.tasks.for_user(u)` existe : l'appeler appliquerait un second filtre d'appartenance redondant. Sans intérêt — partir de `Task.objects.for_user(u)`.
