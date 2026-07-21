@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Mes projets — TaskFlow{% endblock %}
+
+{% block content %}
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">Mes projets</h1>
+    <a class="btn btn-primary" href="{% url 'project_create' %}">Nouveau projet</a>
+  </div>
+
+  {% if projects %}
+    <div class="card shadow-sm">
+      <table class="table table-hover mb-0 align-middle">
+        <thead>
+          <tr>
+            <th>Nom</th>
+            <th>Tâches</th>
+            <th>Créé le</th>
+            <th class="text-end">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for project in projects %}
+            <tr>
+              <td>
+                <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a>
+              </td>
+              <td>{{ project.task_count }}</td>
+              <td>{{ project.created_at|date:"d/m/Y" }}</td>
+              <td class="text-end">
+                <a class="btn btn-sm btn-outline-secondary"
+                   href="{% url 'project_update' project.pk %}">Modifier</a>
+                <a class="btn btn-sm btn-outline-danger"
+                   href="{% url 'project_delete' project.pk %}">Supprimer</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="alert alert-info">
+      Vous n'avez pas encore de projet.
+      <a href="{% url 'project_create' %}">Créez le premier</a>.
+    </div>
+  {% endif %}
+{% endblock %}

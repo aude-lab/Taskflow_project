@@ -23,5 +23,6 @@ urlpatterns = [
     path('api/', include('tasks.urls')),
     # Front (vues Django classiques, authentification par session)
     path('', include('accounts.urls_web')),
+    path('', include('projects.urls_web')),
     path('', include('core.urls_web')),
 ]

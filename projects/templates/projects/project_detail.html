@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}{{ project.name }} — TaskFlow{% endblock %}
+
+{% block content %}
+  <div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+      <h1 class="h3 mb-1">{{ project.name }}</h1>
+      <p class="text-muted small mb-0">
+        Créé le {{ project.created_at|date:"d/m/Y" }} —
+        modifié le {{ project.updated_at|date:"d/m/Y" }}
+      </p>
+    </div>
+    <div>
+      <a class="btn btn-sm btn-outline-secondary"
+         href="{% url 'project_update' project.pk %}">Modifier</a>
+      <a class="btn btn-sm btn-outline-danger"
+         href="{% url 'project_delete' project.pk %}">Supprimer</a>
+    </div>
+  </div>
+
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      {% if project.description %}
+        <p class="mb-0">{{ project.description|linebreaksbr }}</p>
+      {% else %}
+        <p class="text-muted mb-0">Aucune description.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  {# Emplacement réservé : la liste des tâches arrive à la tranche suivante. #}
+  <h2 class="h5">Tâches</h2>
+  <p class="text-muted">La gestion des tâches arrive prochainement.</p>
+
+  <a href="{% url 'project_list' %}">&larr; Retour aux projets</a>
+{% endblock %}
