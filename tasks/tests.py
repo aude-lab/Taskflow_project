@@ -1,6 +1,9 @@
 from datetime import date, timedelta
 
 from django.contrib.auth import get_user_model
+from django.db import connection
+from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 from projects.models import Project
@@ -652,3 +655,208 @@ class DashboardTestCase(APITestCase):
         self.client.force_authenticate(None)
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class TaskFrontTestCase(TestCase):
+    """Tests du CRUD tâches côté front (cf. tasks/SPEC-front.md)."""
+
+    PASSWORD = "Brouillard-Tuile-42"
+
+    def setUp(self):
+        self.alice = User.objects.create_user(
+            username="alice", email="alice@example.com", password=self.PASSWORD
+        )
+        self.bob = User.objects.create_user(
+            username="bob", email="bob@example.com", password=self.PASSWORD
+        )
+        self.project = Project.objects.create(owner=self.alice, name="Projet Alice")
+        self.bob_project = Project.objects.create(owner=self.bob, name="Projet Bob")
+        self.task = Task.objects.create(title="T1", project=self.project)
+        self.detail_url = reverse("project_detail", args=[self.project.pk])
+        self.create_url = reverse("task_create", kwargs={"project_pk": self.project.pk})
+        self.client.force_login(self.alice)
+
+    # --- Isolation ---
+
+    def test_create_in_other_users_project_returns_404(self):
+        url = reverse("task_create", kwargs={"project_pk": self.bob_project.pk})
+        for method in ("get", "post"):
+            with self.subTest(method=method):
+                response = getattr(self.client, method)(
+                    url, {"title": "X", "status": Task.Status.TODO, "priority": Task.Priority.MEDIUM}
+                )
+                self.assertEqual(response.status_code, 404)
+        self.assertFalse(Task.objects.filter(project=self.bob_project).exists())
+
+    def test_modify_or_delete_other_users_task_returns_404(self):
+        bob_task = Task.objects.create(title="T Bob", project=self.bob_project)
+        cases = [
+            ("get", reverse("task_update", args=[bob_task.pk])),
+            ("post", reverse("task_update", args=[bob_task.pk])),
+            ("get", reverse("task_delete", args=[bob_task.pk])),
+            ("post", reverse("task_delete", args=[bob_task.pk])),
+        ]
+        for method, url in cases:
+            with self.subTest(method=method, url=url):
+                response = getattr(self.client, method)(url)
+                self.assertEqual(response.status_code, 404)
+        self.assertTrue(Task.objects.filter(pk=bob_task.pk).exists())
+
+    def test_anonymous_is_redirected_on_every_view(self):
+        self.client.logout()
+        urls = [
+            self.create_url,
+            reverse("task_update", args=[self.task.pk]),
+            reverse("task_delete", args=[self.task.pk]),
+        ]
+        for url in urls:
+            for method in ("get", "post"):
+                with self.subTest(url=url, method=method):
+                    response = getattr(self.client, method)(url)
+                    # 302 vers la connexion, jamais 404 (le projet parent ne
+                    # doit pas être chargé avant l'authentification) ni 500.
+                    self.assertEqual(response.status_code, 302)
+                    self.assertIn(reverse("login"), response.url)
+
+    # --- Création ---
+
+    def valid_payload(self, **overrides):
+        data = {
+            "title": "Nouvelle tâche",
+            "description": "",
+            "status": Task.Status.IN_PROGRESS,
+            "priority": Task.Priority.HIGH,
+            "due_date": "",
+        }
+        data.update(overrides)
+        return data
+
+    def test_create_attaches_task_to_url_project(self):
+        response = self.client.post(self.create_url, self.valid_payload())
+        self.assertRedirects(response, self.detail_url)
+        task = Task.objects.get(title="Nouvelle tâche")
+        self.assertEqual(task.project, self.project)
+
+    def test_create_form_preselects_defaults(self):
+        response = self.client.get(self.create_url)
+        self.assertEqual(response.status_code, 200)
+        form = response.context["form"]
+        self.assertEqual(form["status"].value(), Task.Status.TODO)
+        self.assertEqual(form["priority"].value(), Task.Priority.MEDIUM)
+
+    def test_empty_title_shows_error_in_html(self):
+        response = self.client.post(self.create_url, self.valid_payload(title=""))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("title", response.context["form"].errors)
+        # Le message d'erreur réel doit être rendu, pas seulement la classe CSS.
+        self.assertContains(response, "Ce champ est obligatoire.")
+        self.assertEqual(Task.objects.filter(project=self.project).count(), 1)
+
+    def test_invalid_status_rejected(self):
+        response = self.client.post(self.create_url, self.valid_payload(status="fini"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("status", response.context["form"].errors)
+
+    def test_invalid_priority_rejected(self):
+        response = self.client.post(
+            self.create_url, self.valid_payload(priority="urgente")
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("priority", response.context["form"].errors)
+
+    def test_create_shows_success_message(self):
+        response = self.client.post(
+            self.create_url, self.valid_payload(), follow=True
+        )
+        self.assertContains(response, "Tâche créée.")
+
+    def test_missing_status_is_form_error_not_silent_default(self):
+        payload = self.valid_payload()
+        del payload["status"]
+        response = self.client.post(self.create_url, payload)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("status", response.context["form"].errors)
+
+    def test_project_in_post_is_ignored(self):
+        self.client.post(
+            self.create_url, self.valid_payload(project=self.bob_project.pk)
+        )
+        task = Task.objects.get(title="Nouvelle tâche")
+        self.assertEqual(task.project, self.project)
+
+    # --- due_date : entrée ET sortie (le piège fr-fr) ---
+
+    def test_due_date_iso_format_is_accepted(self):
+        response = self.client.post(
+            self.create_url, self.valid_payload(due_date="2026-08-01")
+        )
+        self.assertRedirects(response, self.detail_url)
+        task = Task.objects.get(title="Nouvelle tâche")
+        self.assertEqual(task.due_date, date(2026, 8, 1))
+
+    def test_empty_due_date_is_null(self):
+        self.client.post(self.create_url, self.valid_payload(due_date=""))
+        self.assertIsNone(Task.objects.get(title="Nouvelle tâche").due_date)
+
+    def test_past_due_date_is_allowed(self):
+        past = (date.today() - timedelta(days=7)).isoformat()
+        response = self.client.post(
+            self.create_url, self.valid_payload(due_date=past)
+        )
+        self.assertRedirects(response, self.detail_url)
+
+    def test_edit_form_redisplays_date_in_iso_format(self):
+        # Sans format="%Y-%m-%d" sur le widget, la date se rendrait en JJ/MM/AAAA
+        # → invalide pour <input type=date>, qui s'ouvrirait vide.
+        self.task.due_date = date(2026, 8, 1)
+        self.task.save()
+        response = self.client.get(reverse("task_update", args=[self.task.pk]))
+        self.assertContains(response, 'value="2026-08-01"')
+
+    # --- Modification ---
+
+    def test_update_changes_fields_but_not_project(self):
+        response = self.client.post(
+            reverse("task_update", args=[self.task.pk]),
+            self.valid_payload(title="T1 modifiée", status=Task.Status.DONE),
+        )
+        self.assertRedirects(response, self.detail_url)
+        self.task.refresh_from_db()
+        self.assertEqual(self.task.title, "T1 modifiée")
+        self.assertEqual(self.task.status, Task.Status.DONE)
+        self.assertEqual(self.task.project, self.project)
+
+    # --- Suppression ---
+
+    def test_get_delete_shows_confirmation_without_deleting(self):
+        response = self.client.get(reverse("task_delete", args=[self.task.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(Task.objects.filter(pk=self.task.pk).exists())
+
+    def test_post_delete_removes_task_and_keeps_project(self):
+        response = self.client.post(reverse("task_delete", args=[self.task.pk]))
+        self.assertRedirects(response, self.detail_url)
+        self.assertFalse(Task.objects.filter(pk=self.task.pk).exists())
+        self.assertTrue(Project.objects.filter(pk=self.project.pk).exists())
+
+    # --- Affichage & performance de la liste (dans le détail projet) ---
+
+    def test_detail_lists_project_tasks(self):
+        Task.objects.create(
+            title="À faire haute",
+            project=self.project,
+            status=Task.Status.TODO,
+            priority=Task.Priority.HIGH,
+        )
+        response = self.client.get(self.detail_url)
+        self.assertContains(response, "À faire haute")
+        # Libellés accentués via get_*_display, pas les valeurs ASCII.
+        self.assertContains(response, "Haute")
+
+    def test_detail_task_list_query_count_is_constant(self):
+        with CaptureQueriesContext(connection) as baseline:
+            self.client.get(self.detail_url)
+        for i in range(10):
+            Task.objects.create(title=f"T{i}", project=self.project)
+        with self.assertNumQueries(len(baseline)):
+            self.client.get(self.detail_url)
