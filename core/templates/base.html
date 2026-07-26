@@ -14,10 +14,16 @@
   <div class="container">
     <a class="navbar-brand" href="{% url 'home' %}">TaskFlow</a>
     {% if user.is_authenticated %}
+      {% with section=request.resolver_match.url_name|default:"" %}
       <div class="navbar-nav me-auto">
-        <a class="nav-link" href="{% url 'project_list' %}">Projets</a>
-        <a class="nav-link" href="{% url 'task_list' %}">Tâches</a>
+        {# Sur le nom d'URL (project_* / task_*) : le chemin serait ambigu, la
+           création de tâche vivant sous /projets/<pk>/taches/. #}
+        <a class="nav-link {% if 'project' in section %}active{% endif %}"
+           href="{% url 'project_list' %}">Projets</a>
+        <a class="nav-link {% if 'task' in section %}active{% endif %}"
+           href="{% url 'task_list' %}">Tâches</a>
       </div>
+      {% endwith %}
     {% endif %}
     <div class="ms-auto d-flex align-items-center gap-3">
       {% if user.is_authenticated %}

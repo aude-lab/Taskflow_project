@@ -2,6 +2,7 @@
 Table d'une liste de tâches pour le tableau de bord.
 Attend `tasks` (itérable de Task) et `empty_label` (texte d'état vide).
 {% endcomment %}
+{% load task_badges %}
 <table class="table table-sm table-hover mb-0 align-middle">
   <tbody>
     {% for task in tasks %}
@@ -10,8 +11,10 @@ Attend `tasks` (itérable de Task) et `empty_label` (texte d'état vide).
           <a href="{% url 'task_update' task.pk %}">{{ task.title }}</a>
         </td>
         <td class="text-muted">{{ task.project.name }}</td>
-        <td>{{ task.get_priority_display }}</td>
-        <td>{{ task.due_date|date:"d/m/Y"|default:"—" }}</td>
+        <td>{% priority_badge task.priority %}</td>
+        <td class="{% if task|is_overdue %}text-danger fw-semibold{% endif %}">
+          {{ task.due_date|date:"d/m/Y"|default:"—" }}
+        </td>
       </tr>
     {% empty %}
       <tr>

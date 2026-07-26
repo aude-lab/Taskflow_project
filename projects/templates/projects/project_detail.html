@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load task_badges %}
 
 {% block title %}{{ project.name }} — TaskFlow{% endblock %}
 
@@ -51,9 +52,11 @@
         {% for task in project.tasks.all %}
           <tr>
             <td>{{ task.title }}</td>
-            <td>{{ task.get_status_display }}</td>
-            <td>{{ task.get_priority_display }}</td>
-            <td>{{ task.due_date|date:"d/m/Y"|default:"—" }}</td>
+            <td>{% status_badge task.status %}</td>
+            <td>{% priority_badge task.priority %}</td>
+            <td class="{% if task|is_overdue %}text-danger fw-semibold{% endif %}">
+              {{ task.due_date|date:"d/m/Y"|default:"—" }}
+            </td>
             <td class="text-end">
               <a class="btn btn-sm btn-outline-secondary"
                  href="{% url 'task_update' task.pk %}">Modifier</a>

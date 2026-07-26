@@ -1029,3 +1029,117 @@ class TaskListFrontTestCase(TestCase):
             Task.objects.create(title=f"Extra {i}", project=self.project_a)
         with self.assertNumQueries(len(baseline)):
             self.client.get(self.url)
+
+
+class PolishTestCase(TestCase):
+    """Tests du polish visuel (cf. core/SPEC-front-polish.md).
+
+    Présentation : on vérifie les classes CSS rendues et le helper is_overdue.
+    """
+
+    PASSWORD = "Brouillard-Tuile-42"
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="alice", email="alice@example.com", password=self.PASSWORD
+        )
+        self.project = Project.objects.create(owner=self.user, name="Projet")
+        self.today = timezone.localdate()
+        self.list_url = reverse("task_list")
+        self.client.force_login(self.user)
+
+    # --- is_overdue (helper) ---
+
+    def test_is_overdue_filter(self):
+        from tasks.templatetags.task_badges import is_overdue
+
+        overdue = Task.objects.create(
+            title="R", project=self.project, status=Task.Status.TODO,
+            due_date=self.today - timedelta(days=1),
+        )
+        future = Task.objects.create(
+            title="F", project=self.project, status=Task.Status.TODO,
+            due_date=self.today + timedelta(days=1),
+        )
+        done_past = Task.objects.create(
+            title="D", project=self.project, status=Task.Status.DONE,
+            due_date=self.today - timedelta(days=5),
+        )
+        no_date = Task.objects.create(title="N", project=self.project)
+        self.assertTrue(is_overdue(overdue))
+        self.assertFalse(is_overdue(future))
+        # Terminée : pas « en retard » même si l'échéance est passée.
+        self.assertFalse(is_overdue(done_past))
+        self.assertFalse(is_overdue(no_date))
+
+    # --- Badges ---
+
+    def test_status_and_priority_badges_colors(self):
+        Task.objects.create(
+            title="T", project=self.project,
+            status=Task.Status.DONE, priority=Task.Priority.HIGH,
+        )
+        response = self.client.get(self.list_url)
+        # Terminé → vert, Haute → rouge, libellés accentués conservés.
+        self.assertContains(response, "text-bg-success")
+        self.assertContains(response, "text-bg-danger")
+        self.assertContains(response, "Terminé")
+        self.assertContains(response, "Haute")
+
+    def test_overdue_date_is_highlighted(self):
+        Task.objects.create(
+            title="Retard", project=self.project, status=Task.Status.TODO,
+            due_date=self.today - timedelta(days=2),
+        )
+        response = self.client.get(self.list_url)
+        self.assertContains(response, "text-danger fw-semibold")
+
+    def test_future_task_date_not_highlighted(self):
+        Task.objects.create(
+            title="Futur", project=self.project, status=Task.Status.TODO,
+            due_date=self.today + timedelta(days=5),
+        )
+        response = self.client.get(self.list_url)
+        self.assertNotContains(response, "text-danger fw-semibold")
+
+    # --- Navigation active ---
+
+    def test_nav_highlights_current_section(self):
+        # assertInHTML normalise les espaces (l'attribut class et href sont sur
+        # des lignes différentes dans le template).
+        on_tasks = self.client.get(self.list_url).content.decode()
+        self.assertInHTML(
+            '<a class="nav-link active" href="/taches/">Tâches</a>', on_tasks
+        )
+        on_projects = self.client.get(reverse("project_list")).content.decode()
+        self.assertInHTML(
+            '<a class="nav-link active" href="/projets/">Projets</a>', on_projects
+        )
+
+    def test_nav_task_create_is_not_double_active(self):
+        # /projets/<pk>/taches/nouvelle/ contient « projets » ET « taches » dans
+        # le chemin : le repère par nom d'URL évite d'allumer les deux liens.
+        url = reverse("task_create", kwargs={"project_pk": self.project.pk})
+        html = self.client.get(url).content.decode()
+        # Un seul lien de nav actif, et c'est « Tâches ».
+        self.assertEqual(html.count("nav-link active"), 1)
+        self.assertInHTML(
+            '<a class="nav-link active" href="/taches/">Tâches</a>', html
+        )
+
+    def test_badge_does_not_crash_on_unknown_value(self):
+        from tasks.templatetags.task_badges import priority_badge, status_badge
+
+        # Une valeur hors choix ne doit pas lever (helper d'affichage).
+        self.assertEqual(status_badge("inconnu")["css"], "secondary")
+        self.assertEqual(status_badge("inconnu")["label"], "inconnu")
+        self.assertEqual(priority_badge("???")["css"], "secondary")
+
+    # --- État vide soigné ---
+
+    def test_empty_task_list_shows_styled_block_not_table(self):
+        response = self.client.get(self.list_url)
+        self.assertContains(response, "Vous n'avez pas encore de tâche.")
+        # Encart centré, et pas d'en-tête de tableau vide.
+        self.assertContains(response, "text-center text-muted")
+        self.assertNotContains(response, "<th>Titre</th>")
