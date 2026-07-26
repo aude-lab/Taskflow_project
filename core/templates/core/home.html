@@ -1,11 +1,39 @@
 {% extends "base.html" %}
 
-{% block title %}Accueil — TaskFlow{% endblock %}
+{% block title %}Tableau de bord — TaskFlow{% endblock %}
 
 {% block content %}
-  <h1 class="h3 mb-3">Bonjour {{ user.username }}</h1>
-  <p class="text-muted">
-    Le tableau de bord et la gestion des projets et des tâches arrivent dans les
-    prochaines tranches.
-  </p>
+  <h1 class="h3 mb-4">Bonjour {{ user.username }}</h1>
+
+  {# --- Répartition par statut --- #}
+  <div class="row g-3 mb-4">
+    {% for label, count in by_status_display %}
+      <div class="col-sm-4">
+        <div class="card shadow-sm text-center">
+          <div class="card-body">
+            <div class="display-6">{{ count }}</div>
+            <div class="text-muted">{{ label }}</div>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  {# --- En retard --- #}
+  <div class="card shadow-sm mb-4 border-danger">
+    <div class="card-header bg-danger-subtle d-flex justify-content-between">
+      <span class="fw-semibold">En retard</span>
+      <span class="badge text-bg-danger">{{ overdue|length }}</span>
+    </div>
+    {% include "core/_task_table.html" with tasks=overdue empty_label="Aucune tâche en retard." %}
+  </div>
+
+  {# --- À venir (14 jours) --- #}
+  <div class="card shadow-sm mb-4">
+    <div class="card-header d-flex justify-content-between">
+      <span class="fw-semibold">À venir (14 jours)</span>
+      <span class="badge text-bg-secondary">{{ upcoming|length }}</span>
+    </div>
+    {% include "core/_task_table.html" with tasks=upcoming empty_label="Aucune tâche à venir." %}
+  </div>
 {% endblock %}
