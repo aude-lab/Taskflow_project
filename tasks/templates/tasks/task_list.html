@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block title %}Mes tâches — TaskFlow{% endblock %}
+
+{% block content %}
+  <h1 class="h3 mb-3">Mes tâches</h1>
+
+  {# Filtres — formulaire GET (partageable via l'URL, pas de CSRF). #}
+  <form method="get" class="card card-body shadow-sm mb-4">
+    <div class="row g-3 align-items-end">
+      <div class="col-md-3">
+        <label class="form-label" for="f-project">Projet</label>
+        <select class="form-select" id="f-project" name="project">
+          <option value="">Tous</option>
+          {% for p in projects %}
+            <option value="{{ p.pk }}"
+              {% if p.pk|stringformat:"s" == selected_project %}selected{% endif %}>
+              {{ p.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label" for="f-status">Statut</label>
+        <select class="form-select" id="f-status" name="status">
+          <option value="">Tous</option>
+          {% for value, label in status_choices %}
+            <option value="{{ value }}"
+              {% if value == selected_status %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label" for="f-priority">Priorité</label>
+        <select class="form-select" id="f-priority" name="priority">
+          <option value="">Toutes</option>
+          {% for value, label in priority_choices %}
+            <option value="{{ value }}"
+              {% if value == selected_priority %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3">
+        <label class="form-label" for="f-after">Échéance à partir du</label>
+        <input type="date" class="form-control" id="f-after"
+               name="due_date_after" value="{{ due_date_after }}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label" for="f-before">Échéance jusqu'au</label>
+        <input type="date" class="form-control" id="f-before"
+               name="due_date_before" value="{{ due_date_before }}">
+      </div>
+      <div class="col-md-3">
+        <button type="submit" class="btn btn-primary">Filtrer</button>
+        <a class="btn btn-outline-secondary" href="{% url 'task_list' %}">Réinitialiser</a>
+      </div>
+    </div>
+  </form>
+
+  <div class="card shadow-sm">
+    <table class="table table-hover mb-0 align-middle">
+      <thead>
+        <tr>
+          <th>Titre</th>
+          <th>Projet</th>
+          <th>Statut</th>
+          <th>Priorité</th>
+          <th>Échéance</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for task in tasks %}
+          <tr>
+            <td><a href="{% url 'task_update' task.pk %}">{{ task.title }}</a></td>
+            <td class="text-muted">{{ task.project.name }}</td>
+            <td>{{ task.get_status_display }}</td>
+            <td>{{ task.get_priority_display }}</td>
+            <td>{{ task.due_date|date:"d/m/Y"|default:"—" }}</td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="5" class="text-muted">
+              {% if has_filters %}
+                Aucune tâche ne correspond à ces filtres.
+              {% else %}
+                Vous n'avez pas encore de tâche.
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

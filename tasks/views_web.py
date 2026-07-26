@@ -3,11 +3,57 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils.functional import cached_property
-from django.views.generic import CreateView, DeleteView, UpdateView
+from django.views.generic import CreateView, DeleteView, ListView, UpdateView
 from projects.models import Project
 
+from .filters import TaskFilter
 from .forms import TaskForm
 from .models import Task
+
+
+class TaskListView(LoginRequiredMixin, ListView):
+    """Liste filtrable de toutes les tâches de l'utilisateur (tous projets).
+
+    Réutilise `TaskFilter` (source unique du filtrage, partagée avec l'API) sur
+    le queryset restreint à l'utilisateur : les filtres ne peuvent que réduire,
+    jamais franchir l'isolation. Utilisé directement (hors DjangoFilterBackend),
+    `TaskFilter` ignore silencieusement une valeur invalide au lieu de lever :
+    une URL forgée donne donc 200 (critère fautif ignoré), jamais 500.
+    """
+
+    template_name = "tasks/task_list.html"
+    context_object_name = "tasks"
+
+    def get_queryset(self):
+        self.filterset = TaskFilter(
+            self.request.GET,
+            queryset=Task.objects.for_user(self.request.user),
+            request=self.request,
+        )
+        return self.filterset.qs
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Le <select> projet n'expose que les projets de l'utilisateur.
+        context["projects"] = Project.objects.for_user(self.request.user)
+        context["status_choices"] = Task.Status.choices
+        context["priority_choices"] = Task.Priority.choices
+        # Valeurs actives, ré-injectées telles quelles (chaînes de request.GET)
+        # pour que le formulaire persiste après soumission. On ré-affiche la
+        # chaîne brute des dates (déjà en AAAA-MM-JJ), sans repasser par un
+        # DateField qui la reformaterait et casserait l'<input type="date">.
+        params = self.request.GET
+        context["selected_project"] = params.get("project", "")
+        context["selected_status"] = params.get("status", "")
+        context["selected_priority"] = params.get("priority", "")
+        context["due_date_after"] = params.get("due_date_after", "")
+        context["due_date_before"] = params.get("due_date_before", "")
+        context["has_filters"] = any(
+            params.get(k)
+            for k in ("project", "status", "priority",
+                      "due_date_after", "due_date_before")
+        )
+        return context
 
 
 class TaskCreateView(LoginRequiredMixin, CreateView):

@@ -860,3 +860,172 @@ class TaskFrontTestCase(TestCase):
             Task.objects.create(title=f"T{i}", project=self.project)
         with self.assertNumQueries(len(baseline)):
             self.client.get(self.detail_url)
+
+
+class TaskListFrontTestCase(TestCase):
+    """Tests de la liste filtrable des tâches (cf. tasks/SPEC-front-filters.md)."""
+
+    PASSWORD = "Brouillard-Tuile-42"
+
+    def setUp(self):
+        self.alice = User.objects.create_user(
+            username="alice", email="alice@example.com", password=self.PASSWORD
+        )
+        self.bob = User.objects.create_user(
+            username="bob", email="bob@example.com", password=self.PASSWORD
+        )
+        self.project_a = Project.objects.create(owner=self.alice, name="Projet A")
+        self.project_b = Project.objects.create(owner=self.alice, name="Projet B")
+        self.bob_project = Project.objects.create(owner=self.bob, name="Projet Bob")
+
+        self.t_a_todo_high = Task.objects.create(
+            title="A / à faire / haute",
+            project=self.project_a,
+            status=Task.Status.TODO,
+            priority=Task.Priority.HIGH,
+            due_date=date(2026, 1, 10),
+        )
+        self.t_a_done_low = Task.objects.create(
+            title="A / terminé / basse",
+            project=self.project_a,
+            status=Task.Status.DONE,
+            priority=Task.Priority.LOW,
+            due_date=date(2026, 6, 15),
+        )
+        self.t_b_inprog = Task.objects.create(
+            title="B / en cours",
+            project=self.project_b,
+            status=Task.Status.IN_PROGRESS,
+            priority=Task.Priority.MEDIUM,
+        )
+        self.bob_task = Task.objects.create(
+            title="Tâche de Bob", project=self.bob_project
+        )
+        self.url = reverse("task_list")
+        self.client.force_login(self.alice)
+
+    def titles(self, response):
+        return {t.title for t in response.context["tasks"]}
+
+    # --- Base / isolation ---
+
+    def test_anonymous_is_redirected(self):
+        self.client.logout()
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("login"), response.url)
+
+    def test_no_filter_lists_all_own_tasks(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            self.titles(response),
+            {"A / à faire / haute", "A / terminé / basse", "B / en cours"},
+        )
+        self.assertNotIn("Tâche de Bob", self.titles(response))
+
+    def test_project_select_only_lists_own_projects(self):
+        response = self.client.get(self.url)
+        self.assertContains(response, "Projet A")
+        self.assertContains(response, "Projet B")
+        self.assertNotContains(response, "Projet Bob")
+
+    def test_isolation_never_shows_other_users_tasks(self):
+        # Un statut que possède aussi Bob ne fait pas apparaître sa tâche.
+        response = self.client.get(self.url, {"status": Task.Status.TODO})
+        self.assertNotIn("Tâche de Bob", self.titles(response))
+
+    # --- Filtres ---
+
+    def test_filter_by_project(self):
+        response = self.client.get(self.url, {"project": self.project_b.pk})
+        self.assertEqual(self.titles(response), {"B / en cours"})
+
+    def test_filter_by_status(self):
+        response = self.client.get(self.url, {"status": Task.Status.DONE})
+        self.assertEqual(self.titles(response), {"A / terminé / basse"})
+
+    def test_filter_by_priority(self):
+        response = self.client.get(self.url, {"priority": Task.Priority.HIGH})
+        self.assertEqual(self.titles(response), {"A / à faire / haute"})
+
+    def test_filter_due_date_after(self):
+        response = self.client.get(self.url, {"due_date_after": "2026-03-01"})
+        self.assertEqual(self.titles(response), {"A / terminé / basse"})
+
+    def test_filter_due_date_before(self):
+        response = self.client.get(self.url, {"due_date_before": "2026-01-10"})
+        self.assertEqual(self.titles(response), {"A / à faire / haute"})
+
+    def test_combined_filters_are_intersected(self):
+        response = self.client.get(
+            self.url,
+            {"project": self.project_a.pk, "priority": Task.Priority.LOW},
+        )
+        self.assertEqual(self.titles(response), {"A / terminé / basse"})
+
+    # --- Persistance du formulaire ---
+
+    def test_selected_filters_persist_in_form(self):
+        response = self.client.get(
+            self.url,
+            {"status": Task.Status.DONE, "due_date_after": "2026-03-01"},
+        )
+        # Le <select> statut ré-affiche l'option choisie (assertInHTML normalise
+        # les espaces), et la date se ré-affiche en ISO (piège tranche 3 évité).
+        self.assertInHTML(
+            '<option value="termine" selected>Terminé</option>',
+            response.content.decode(),
+        )
+        self.assertContains(response, 'value="2026-03-01"')
+
+    # --- Valeurs invalides forgées : 200, jamais 500 (décision SPEC §7) ---
+
+    def test_invalid_status_is_ignored_not_500(self):
+        response = self.client.get(self.url, {"status": "bidon"})
+        self.assertEqual(response.status_code, 200)
+        # Filtre ignoré → toutes les tâches du user.
+        self.assertEqual(len(response.context["tasks"]), 3)
+
+    def test_malformed_date_is_ignored_not_500(self):
+        response = self.client.get(self.url, {"due_date_before": "pas-une-date"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["tasks"]), 3)
+
+    def test_non_numeric_project_is_ignored_not_500(self):
+        response = self.client.get(self.url, {"project": "abc"})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["tasks"]), 3)
+
+    def test_other_users_project_pk_returns_empty(self):
+        response = self.client.get(self.url, {"project": self.bob_project.pk})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(list(response.context["tasks"]), [])
+
+    # --- États vides distincts (SPEC §8) ---
+
+    def test_empty_state_without_tasks(self):
+        Task.objects.filter(project__owner=self.alice).delete()
+        response = self.client.get(self.url)
+        self.assertFalse(response.context["has_filters"])
+        self.assertContains(response, "Vous n'avez pas encore de tâche.")
+
+    def test_empty_state_with_filters_but_no_match(self):
+        # L'utilisateur a des tâches, mais aucune priorité « haute » terminée.
+        response = self.client.get(
+            self.url,
+            {"status": Task.Status.TODO, "priority": Task.Priority.LOW},
+        )
+        self.assertEqual(list(response.context["tasks"]), [])
+        self.assertTrue(response.context["has_filters"])
+        self.assertContains(response, "Aucune tâche ne correspond à ces filtres.")
+
+    # --- Performance ---
+
+    def test_query_count_is_constant(self):
+        with CaptureQueriesContext(connection) as baseline:
+            self.client.get(self.url)
+        for i in range(10):
+            Task.objects.create(title=f"Extra {i}", project=self.project_a)
+        with self.assertNumQueries(len(baseline)):
+            self.client.get(self.url)
