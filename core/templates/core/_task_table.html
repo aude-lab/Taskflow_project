@@ -1,5 +1,7 @@
-{# Table d'une liste de tâches pour le tableau de bord.
-   Attend `tasks` (itérable de Task) et `empty_label` (texte d'état vide). #}
+{% comment %}
+Table d'une liste de tâches pour le tableau de bord.
+Attend `tasks` (itérable de Task) et `empty_label` (texte d'état vide).
+{% endcomment %}
 <table class="table table-sm table-hover mb-0 align-middle">
   <tbody>
     {% for task in tasks %}

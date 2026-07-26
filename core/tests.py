@@ -90,6 +90,10 @@ class DashboardHomeTestCase(TestCase):
         )
         self.assertContains(response, "Aucune tâche en retard.")
         self.assertContains(response, "Aucune tâche à venir.")
+        # Le commentaire du partial ne doit jamais apparaître dans la page
+        # (un {# #} multi-ligne se rendait littéralement — corrigé en
+        # {% comment %}).
+        self.assertNotContains(response, "itérable de Task")
 
     def test_overdue_unfinished_task_appears_in_overdue_only(self):
         overdue = self.make_task(days=-3, title="Rapport en retard")
