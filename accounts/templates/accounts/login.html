@@ -1,10 +1,15 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}Connexion — TaskFlow{% endblock %}
 
 {% block content %}
   <div class="row justify-content-center">
     <div class="col-md-5">
+      <div class="text-center mb-4">
+        <img src="{% static 'core/logo.png' %}" alt="TaskFlow"
+             class="img-fluid" style="max-width: 180px;">
+      </div>
       <div class="card shadow-sm">
         <div class="card-body">
           <h1 class="h4 mb-3">Connexion</h1>

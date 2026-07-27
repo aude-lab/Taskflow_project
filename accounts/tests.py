@@ -289,6 +289,12 @@ class LoginLogoutViewTestCase(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, "accounts/login.html")
 
+    def test_login_page_shows_logo_and_favicon(self):
+        response = self.client.get(self.login_url)
+        # Logo affiché sur la page + favicon (dans base.html).
+        self.assertContains(response, "core/logo.png")
+        self.assertContains(response, 'rel="icon"')
+
     def test_login_with_valid_credentials(self):
         response = self.client.post(
             self.login_url,
