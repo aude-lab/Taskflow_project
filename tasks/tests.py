@@ -1465,3 +1465,242 @@ class AIAssistantTestCase(APITestCase):
         }
         response = self.client.post(self.confirm_url, payload, format="json")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class ChatAPITestCase(APITestCase):
+    """Tests de l'assistant conversationnel (cf. tasks/SPEC-ai-chat.md §8).
+
+    L'appel OpenAI est TOUJOURS mocké au niveau du client (`tasks.ai.OpenAI`).
+    """
+
+    def setUp(self):
+        self.alice = User.objects.create_user(
+            username="alice", email="alice@example.com", password="pass12345"
+        )
+        self.bob = User.objects.create_user(
+            username="bob", email="bob@example.com", password="pass12345"
+        )
+        self.alice_project = Project.objects.create(
+            owner=self.alice, name="Projet Alice"
+        )
+        self.bob_project = Project.objects.create(
+            owner=self.bob, name="Projet Bob"
+        )
+        self.chat_url = reverse("chat")
+
+    def _openai_returning(self, content):
+        from unittest.mock import MagicMock
+
+        message = MagicMock()
+        message.content = content
+        choice = MagicMock()
+        choice.message = message
+        client = MagicMock()
+        client.chat.completions.create.return_value = MagicMock(choices=[choice])
+        return client
+
+    def _openai_raising(self, exc):
+        from unittest.mock import MagicMock
+
+        client = MagicMock()
+        client.chat.completions.create.side_effect = exc
+        return client
+
+    def _post(self, messages=None, project_id=None):
+        payload = {
+            "messages": messages
+            or [{"role": "user", "content": "Je veux organiser un événement"}],
+            "project_id": project_id,
+        }
+        return self.client.post(self.chat_url, payload, format="json")
+
+    # --- Conversation en cours ---
+
+    def test_chat_in_progress_returns_reply_without_proposal(self):
+        import json
+        from unittest.mock import patch
+
+        content = json.dumps(
+            {"reply": "Quel est le nom du projet ?", "ready_to_confirm": False,
+             "proposal": None}
+        )
+        self.client.force_authenticate(self.alice)
+        with patch("tasks.ai.OpenAI", return_value=self._openai_returning(content)):
+            response = self._post()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["reply"])
+        self.assertFalse(response.data["ready_to_confirm"])
+        self.assertIsNone(response.data["proposal"])
+        # Rien n'est créé par le chat.
+        self.assertEqual(Task.objects.count(), 0)
+        self.assertEqual(Project.objects.count(), 2)
+
+    # --- Proposition finale ---
+
+    def test_chat_final_proposal(self):
+        import json
+        from unittest.mock import patch
+
+        content = json.dumps(
+            {
+                "reply": "Voici le plan proposé.",
+                "ready_to_confirm": True,
+                "proposal": {
+                    "project": {"name": "Lancement produit", "description": "obj"},
+                    "tasks": [
+                        {"title": "Rédiger le communiqué", "description": "",
+                         "priority": "haute", "status": "a_faire",
+                         "due_date": "2026-09-15"},
+                    ],
+                },
+            }
+        )
+        self.client.force_authenticate(self.alice)
+        with patch("tasks.ai.OpenAI", return_value=self._openai_returning(content)):
+            response = self._post()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["ready_to_confirm"])
+        proposal = response.data["proposal"]
+        self.assertEqual(proposal["project"]["name"], "Lancement produit")
+        self.assertEqual(len(proposal["tasks"]), 1)
+        self.assertEqual(proposal["tasks"][0]["title"], "Rédiger le communiqué")
+
+    def test_chat_proposal_normalizes_out_of_choices_values(self):
+        import json
+        from unittest.mock import patch
+
+        content = json.dumps(
+            {
+                "reply": "Plan.",
+                "ready_to_confirm": True,
+                "proposal": {
+                    "project": {"name": "P", "description": ""},
+                    "tasks": [
+                        {"title": "T", "priority": "urgente", "status": "bloque",
+                         "due_date": ""},
+                    ],
+                },
+            }
+        )
+        self.client.force_authenticate(self.alice)
+        with patch("tasks.ai.OpenAI", return_value=self._openai_returning(content)):
+            response = self._post()
+        task = response.data["proposal"]["tasks"][0]
+        self.assertEqual(task["priority"], Task.Priority.MEDIUM)
+        self.assertEqual(task["status"], Task.Status.TODO)
+        self.assertIsNone(task["due_date"])
+
+    def test_chat_ready_but_empty_proposal_falls_back_to_not_ready(self):
+        """Une proposition annoncée mais vide ne doit pas être marquée prête."""
+        import json
+        from unittest.mock import patch
+
+        content = json.dumps(
+            {"reply": "Plan.", "ready_to_confirm": True,
+             "proposal": {"project": {"name": ""}, "tasks": []}}
+        )
+        self.client.force_authenticate(self.alice)
+        with patch("tasks.ai.OpenAI", return_value=self._openai_returning(content)):
+            response = self._post()
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data["ready_to_confirm"])
+        self.assertIsNone(response.data["proposal"])
+
+    # --- Contexte projet existant ---
+
+    def test_chat_injects_existing_tasks_for_own_project(self):
+        import json
+        from unittest.mock import patch
+
+        Task.objects.create(
+            title="Tâche existante A", project=self.alice_project
+        )
+        content = json.dumps(
+            {"reply": "ok", "ready_to_confirm": False, "proposal": None}
+        )
+        client = self._openai_returning(content)
+        self.client.force_authenticate(self.alice)
+        with patch("tasks.ai.OpenAI", return_value=client):
+            response = self._post(project_id=self.alice_project.pk)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Le prompt système passé à OpenAI contient les tâches existantes.
+        _, kwargs = client.chat.completions.create.call_args
+        system_content = kwargs["messages"][0]["content"]
+        self.assertIn("Tâche existante A", system_content)
+
+    def test_chat_project_of_another_user_returns_404(self):
+        from unittest.mock import patch
+
+        self.client.force_authenticate(self.alice)
+        with patch(
+            "tasks.ai.OpenAI", return_value=self._openai_returning("{}")
+        ) as mocked:
+            response = self._post(project_id=self.bob_project.pk)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        mocked.assert_not_called()
+
+    # --- Erreurs ---
+
+    def test_chat_openai_unavailable_returns_502(self):
+        from unittest.mock import patch
+
+        from openai import OpenAIError
+
+        self.client.force_authenticate(self.alice)
+        with patch(
+            "tasks.ai.OpenAI", return_value=self._openai_raising(OpenAIError("down"))
+        ):
+            response = self._post()
+        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+        self.assertIn("detail", response.data)
+
+    def test_chat_unparseable_response_returns_502(self):
+        """Décision D2 : réponse non parseable → 502 (pas 400)."""
+        from unittest.mock import patch
+
+        self.client.force_authenticate(self.alice)
+        with patch(
+            "tasks.ai.OpenAI",
+            return_value=self._openai_returning("désolé, du texte libre"),
+        ):
+            response = self._post()
+        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+        self.assertIn("detail", response.data)
+
+    def test_chat_unauthenticated_returns_401(self):
+        response = self._post()
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_chat_empty_messages_returns_400(self):
+        self.client.force_authenticate(self.alice)
+        response = self.client.post(
+            self.chat_url, {"messages": [], "project_id": None}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_chat_malformed_message_returns_400(self):
+        self.client.force_authenticate(self.alice)
+        response = self.client.post(
+            self.chat_url,
+            {"messages": [{"role": "user"}], "project_id": None},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    # --- Flux « nouveau projet » : création en session (D1) ---
+
+    def test_project_create_accepts_session_auth(self):
+        """Garantit le flux « nouveau projet » : POST /api/projects/ en session."""
+        logged_in = self.client.login(username="alice", password="pass12345")
+        self.assertTrue(logged_in)
+        response = self.client.post(
+            reverse("project-list"),
+            {"name": "Projet via assistant", "description": ""},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(
+            Project.objects.filter(
+                owner=self.alice, name="Projet via assistant"
+            ).exists()
+        )

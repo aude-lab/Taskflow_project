@@ -36,8 +36,14 @@
     <div class="card-body">
       <div class="d-flex justify-content-between align-items-center">
         <h2 class="h6 mb-0">Assistant IA</h2>
-        <button type="button" class="btn btn-sm btn-outline-primary"
-                id="ai-toggle">Générer des tâches avec l'IA</button>
+        <div class="d-flex gap-2">
+          <a class="btn btn-sm btn-outline-primary"
+             href="{% url 'assistant' %}?project_id={{ project.pk }}">
+            Réajuster avec l'IA
+          </a>
+          <button type="button" class="btn btn-sm btn-outline-primary"
+                  id="ai-toggle">Générer des tâches avec l'IA</button>
+        </div>
       </div>
 
       <div id="ai-panel" class="d-none mt-3">

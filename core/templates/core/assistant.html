@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+
+{% block title %}Assistant IA — TaskFlow{% endblock %}
+
+{% block content %}
+  <div id="assistant"
+       data-project-id="{% if project %}{{ project.pk }}{% endif %}">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h1 class="h4 mb-0">Assistant de planification</h1>
+      {% if project %}
+        <a class="btn btn-sm btn-outline-secondary"
+           href="{% url 'project_detail' project.pk %}">← {{ project.name }}</a>
+      {% endif %}
+    </div>
+
+    {% if project %}
+      <p class="text-muted small">
+        Réajustement du projet « {{ project.name }} » : l'assistant tient compte
+        de ses tâches existantes et te proposera de nouvelles tâches.
+      </p>
+    {% endif %}
+
+    {# Fil de discussion #}
+    <div id="chat-log" class="card shadow-sm mb-3 p-3"
+         style="min-height: 320px; max-height: 55vh; overflow-y: auto;"></div>
+
+    {# Récapitulatif de la proposition (affiché quand ready_to_confirm) #}
+    <div id="proposal" class="card shadow-sm mb-3 d-none">
+      <div class="card-header fw-semibold">Plan proposé</div>
+      <div class="card-body">
+        <h3 class="h6" id="proposal-project"></h3>
+        <p class="text-muted small mb-2" id="proposal-desc"></p>
+        <ul class="list-group list-group-flush mb-3" id="proposal-tasks"></ul>
+        <button type="button" class="btn btn-success" id="confirm-btn">
+          Confirmer et créer
+        </button>
+        <span class="small text-muted ms-2">
+          Tu peux aussi continuer à écrire pour demander des modifications.
+        </span>
+      </div>
+    </div>
+
+    {# Zone de message d'erreur #}
+    <div id="chat-error" class="alert alert-danger d-none" role="alert"></div>
+
+    {# Saisie #}
+    <form id="chat-form" class="d-flex gap-2">
+      <input type="text" id="chat-input" class="form-control"
+             placeholder="Écris ton message..." autocomplete="off" autofocus>
+      <button type="submit" class="btn btn-primary" id="send-btn">Envoyer</button>
+    </form>
+  </div>
+
+  <script>
+  (function () {
+    const root = document.getElementById("assistant");
+    const rawProjectId = root.dataset.projectId;
+    const projectId = rawProjectId ? parseInt(rawProjectId, 10) : null;
+    const csrfToken = "{{ csrf_token }}";
+
+    const PRIORITY_LABELS = { basse: "Basse", moyenne: "Moyenne", haute: "Haute" };
+
+    const log = document.getElementById("chat-log");
+    const form = document.getElementById("chat-form");
+    const input = document.getElementById("chat-input");
+    const sendBtn = document.getElementById("send-btn");
+    const errorBox = document.getElementById("chat-error");
+    const proposalBox = document.getElementById("proposal");
+    const confirmBtn = document.getElementById("confirm-btn");
+
+    // Historique de conversation : vit ici, renvoyé entier à chaque appel.
+    const messages = [];
+    // Dernière proposition prête à être créée.
+    let currentProposal = null;
+
+    function escapeHtml(value) {
+      const div = document.createElement("div");
+      div.textContent = value == null ? "" : String(value);
+      return div.innerHTML;
+    }
+
+    function showError(msg, linkUrl, linkLabel) {
+      errorBox.textContent = msg;
+      if (linkUrl) {
+        errorBox.appendChild(document.createTextNode(" "));
+        const a = document.createElement("a");
+        // URL interne construite côté client (/projets/<id>/), id numérique.
+        a.href = linkUrl;
+        a.textContent = linkLabel || linkUrl;
+        errorBox.appendChild(a);
+      }
+      errorBox.classList.remove("d-none");
+    }
+    function hideError() {
+      errorBox.textContent = "";
+      errorBox.classList.add("d-none");
+    }
+
+    function addBubble(role, content) {
+      const wrap = document.createElement("div");
+      wrap.className =
+        "d-flex mb-2 " + (role === "user" ? "justify-content-end" : "justify-content-start");
+      const bubble = document.createElement("div");
+      bubble.className =
+        "p-2 rounded " +
+        (role === "user" ? "bg-primary text-white" : "bg-light border");
+      bubble.style.maxWidth = "80%";
+      // pre-wrap : conserve les retours à la ligne du message sans autoriser de
+      // HTML (le contenu est échappé).
+      bubble.style.whiteSpace = "pre-wrap";
+      bubble.innerHTML = escapeHtml(content);
+      wrap.appendChild(bubble);
+      log.appendChild(wrap);
+      log.scrollTop = log.scrollHeight;
+      return wrap;
+    }
+
+    function addLoadingBubble() {
+      const wrap = addBubble("assistant", "…");
+      wrap.dataset.loading = "1";
+      return wrap;
+    }
+
+    function renderProposal(proposal) {
+      currentProposal = proposal;
+      document.getElementById("proposal-project").textContent =
+        proposal.project.name;
+      document.getElementById("proposal-desc").textContent =
+        proposal.project.description || "";
+      const list = document.getElementById("proposal-tasks");
+      list.innerHTML = proposal.tasks.map(function (t) {
+        const due = t.due_date
+          ? escapeHtml(t.due_date)
+          : "<span class=\"text-muted\">sans échéance</span>";
+        const priority = PRIORITY_LABELS[t.priority] || escapeHtml(t.priority);
+        return (
+          '<li class="list-group-item">' +
+            "<strong>" + escapeHtml(t.title) + "</strong> " +
+            '<span class="badge bg-secondary">' + priority + "</span> " +
+            '<span class="small text-muted">' + due + "</span>" +
+          "</li>"
+        );
+      }).join("");
+      proposalBox.classList.remove("d-none");
+    }
+
+    async function sendMessage(text) {
+      hideError();
+      messages.push({ role: "user", content: text });
+      addBubble("user", text);
+      const loading = addLoadingBubble();
+      sendBtn.disabled = true;
+      input.disabled = true;
+      try {
+        const response = await fetch("/api/chat/", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": csrfToken,
+          },
+          body: JSON.stringify({ messages: messages, project_id: projectId }),
+        });
+        loading.remove();
+        if (!response.ok) {
+          const data = await response.json().catch(function () { return {}; });
+          showError(data.detail || "L'assistant est momentanément indisponible.");
+          return;
+        }
+        const data = await response.json();
+        const reply = data.reply || "";
+        messages.push({ role: "assistant", content: reply });
+        addBubble("assistant", reply);
+        if (data.ready_to_confirm && data.proposal) {
+          renderProposal(data.proposal);
+        } else {
+          // Une nouvelle réponse non prête invalide un ancien récap.
+          proposalBox.classList.add("d-none");
+          currentProposal = null;
+        }
+      } catch (err) {
+        loading.remove();
+        showError("Impossible de contacter le serveur. Vérifie ta connexion.");
+      } finally {
+        sendBtn.disabled = false;
+        input.disabled = false;
+        input.focus();
+      }
+    }
+
+    async function postJson(url, body) {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": csrfToken,
+        },
+        body: JSON.stringify(body),
+      });
+      const data = await response.json().catch(function () { return {}; });
+      return { ok: response.ok, data: data };
+    }
+
+    async function confirmProposal() {
+      if (!currentProposal) return;
+      hideError();
+      confirmBtn.disabled = true;
+      confirmBtn.textContent = "Création en cours…";
+      try {
+        let targetProjectId = projectId;
+        let createdNew = false;
+
+        // Nouveau projet : le créer d'abord (D1, 2 appels séparés).
+        if (targetProjectId === null) {
+          const proj = await postJson("/api/projects/", {
+            name: currentProposal.project.name,
+            description: currentProposal.project.description || "",
+          });
+          if (!proj.ok) {
+            const msg =
+              proj.data.name ? proj.data.name[0] : "La création du projet a échoué.";
+            showError(msg);
+            return;
+          }
+          targetProjectId = proj.data.id;
+          createdNew = true;
+        }
+
+        const conf = await postJson("/api/tasks/confirm/", {
+          project_id: targetProjectId,
+          tasks: currentProposal.tasks,
+        });
+        if (!conf.ok) {
+          // Message distinct selon qu'on vient de créer le projet (non-atomique)
+          // ou qu'on réajuste un projet préexistant. Lien cliquable vers le
+          // projet, récupérable dans les deux cas.
+          const msg = createdNew
+            ? "Le projet a été créé mais l'ajout des tâches a échoué."
+            : "L'ajout des tâches a échoué.";
+          showError(msg, "/projets/" + targetProjectId + "/", "Ouvrir le projet");
+          return;
+        }
+        // Succès complet : redirection vers le projet.
+        window.location.href = "/projets/" + targetProjectId + "/";
+      } catch (err) {
+        showError("Impossible de contacter le serveur. Vérifie ta connexion.");
+      } finally {
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = "Confirmer et créer";
+      }
+    }
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = "";
+      sendMessage(text);
+    });
+    confirmBtn.addEventListener("click", confirmProposal);
+
+    // Message d'accueil (côté front, sans appel API) pour amorcer.
+    addBubble(
+      "assistant",
+      projectId === null
+        ? "Bonjour ! Décris-moi le projet que tu veux organiser et je t'aiderai à le planifier."
+        : "Bonjour ! Dis-moi comment tu veux faire évoluer ce projet et je te proposerai de nouvelles tâches."
+    );
+  })();
+  </script>
+{% endblock %}

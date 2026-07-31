@@ -1,10 +1,17 @@
-"""Génération de tâches via l'API OpenAI (assistant IA — cf. SPEC-ai-assistant.md).
+"""Assistant IA via l'API OpenAI.
 
-Ce module isole toute la dépendance externe (client OpenAI, prompt système,
-parsing/normalisation de la réponse). Les vues n'appellent que
-`generate_tasks(text)` et ne connaissent qu'une seule exception métier :
-`AIServiceError`. Cet isolement rend aussi le mock trivial en test : on patche
-`tasks.ai.generate_tasks` (ou le client), jamais d'appel réel à OpenAI.
+Ce module isole toute la dépendance externe (client OpenAI, prompts système,
+parsing/normalisation des réponses). Il expose deux usages métier aux vues :
+
+- `generate_tasks(text)` — génération one-shot d'une liste de tâches à partir
+  d'un texte libre (cf. SPEC-ai-assistant.md).
+- `chat(messages, project_tasks=None)` — assistant conversationnel de
+  planification, sortie structurée `{reply, ready_to_confirm, proposal}`
+  (cf. SPEC-ai-chat.md).
+
+Les deux ne connaissent qu'une seule exception métier : `AIServiceError`. Cet
+isolement rend aussi le mock trivial en test : on patche `tasks.ai.OpenAI` (le
+client), jamais d'appel réel à OpenAI.
 """
 import json
 
@@ -194,13 +201,177 @@ def generate_tasks(text):
         # Indisponibilité, timeout, erreur d'authentification… → 502 côté vue.
         raise AIServiceError(f"Le service IA est indisponible : {exc}")
 
-    # Réponse structurellement inattendue (aucun choix renvoyé) : traitée comme
-    # une réponse inexploitable (400) plutôt que de laisser filer un IndexError
-    # en 500 silencieux (§4.1).
+    return _parse_response(_message_content(response))
+
+
+def _message_content(response):
+    """Extrait le texte de la réponse OpenAI, ou lève une `AIServiceError`.
+
+    Une réponse structurellement inattendue (aucun choix renvoyé) est traitée
+    comme inexploitable plutôt que de laisser filer un IndexError en 500
+    silencieux.
+    """
     try:
-        content = response.choices[0].message.content
+        return response.choices[0].message.content
     except (AttributeError, IndexError):
         raise AIServiceError(
             "La réponse de l'IA est vide ou mal formée.", unparseable=True
         )
-    return _parse_response(content)
+
+
+# --- Assistant conversationnel (chat) — cf. SPEC-ai-chat.md ------------------
+
+# Sortie TOUJOURS structurée (décision D2) : le message conversationnel vit dans
+# `reply`, et la proposition finale dans `proposal` quand `ready_to_confirm`.
+CHAT_SYSTEM_PROMPT = """\
+Tu es un assistant de planification de projet pour l'application TaskFlow. Tu \
+aides l'utilisateur à définir un projet et ses tâches par la conversation.
+
+Réponds TOUJOURS en français.
+
+Ton objectif est de collecter, en 2 à 4 échanges maximum (sans interrogatoire \
+inutile) : le nom du projet, son objectif, le type de tâches, les priorités et \
+les échéances. Pose des questions courtes et ciblées tant qu'il te manque des \
+informations essentielles.
+
+Tu dois répondre UNIQUEMENT avec un objet JSON valide, sans aucun texte avant \
+ou après, sans bloc de code Markdown (pas de ```). Format EXACT :
+{
+  "reply": "ton message conversationnel en français, affiché à l'utilisateur",
+  "ready_to_confirm": false,
+  "proposal": null
+}
+
+Tant qu'il te manque des informations : "ready_to_confirm" vaut false, \
+"proposal" vaut null, et "reply" contient ta question.
+
+Dès que tu as assez d'informations pour proposer un plan complet, mets \
+"ready_to_confirm" à true et remplis "proposal" ainsi :
+{
+  "reply": "un court récapitulatif en français",
+  "ready_to_confirm": true,
+  "proposal": {
+    "project": {"name": "nom du projet", "description": "objectif du projet"},
+    "tasks": [
+      {
+        "title": "chaîne courte, obligatoire, max 200 caracteres",
+        "description": "chaîne, peut être vide",
+        "priority": "une de ces valeurs EXACTES : basse, moyenne, haute",
+        "status": "une de ces valeurs EXACTES : a_faire, en_cours, termine",
+        "due_date": "date au format AAAA-MM-JJ, ou null si non précisée"
+      }
+    ]
+  }
+}
+
+Règles impératives pour "proposal" :
+- "priority" et "status" sont en ASCII SANS ACCENTS et EXACTEMENT dans les \
+listes ci-dessus. N'invente jamais d'autre valeur.
+- Priorité non précisée -> "moyenne" ; statut non précisé -> "a_faire" ; \
+échéance non précisée -> null (le mot-clé JSON null).
+- "title" ne doit jamais être vide, et "proposal.tasks" ne doit jamais être \
+vide quand "ready_to_confirm" est true."""
+
+
+def _chat_system_prompt(project_tasks=None):
+    """Prompt système du chat, complété par la date du jour et, si le chat est
+    invoqué depuis un projet existant, par ses tâches actuelles (contexte).
+
+    `project_tasks` est un itérable d'objets `Task` (ou None). C'est la
+    « mémoire » du contexte projet — pas de la conversation, qui vit côté front.
+    """
+    today = timezone.localdate().isoformat()
+    prompt = (
+        f"{CHAT_SYSTEM_PROMPT}\n\n"
+        f"Nous sommes aujourd'hui le {today}. Résous toute date relative par "
+        f"rapport à cette date, et n'utilise jamais une échéance dans le passé."
+    )
+    if project_tasks is not None:
+        lines = [
+            f"- {t.title} (statut: {t.status}, priorité: {t.priority}, "
+            f"échéance: {t.due_date.isoformat() if t.due_date else 'aucune'})"
+            for t in project_tasks
+        ]
+        existing = "\n".join(lines) if lines else "(aucune tâche pour l'instant)"
+        prompt += (
+            "\n\nContexte : ce projet existe déjà et contient les tâches "
+            f"suivantes :\n{existing}\n"
+            "Ta proposition doit COMPLÉTER ce projet avec de NOUVELLES tâches, "
+            "sans recréer ni dupliquer les tâches existantes."
+        )
+    return prompt
+
+
+def _parse_chat_response(content):
+    """Parse la sortie structurée du chat en `{reply, ready_to_confirm,
+    proposal}`, avec normalisation des tâches proposées.
+
+    Un JSON invalide ou une structure inattendue lève `AIServiceError` (mappée en
+    502 par la vue, décision D2). La proposition n'est retenue que si elle est
+    exploitable (nom de projet + au moins une tâche) ; sinon on retombe
+    proprement sur `ready_to_confirm: false` plutôt que de proposer un plan vide.
+    """
+    try:
+        data = json.loads(content)
+    except (json.JSONDecodeError, TypeError):
+        raise AIServiceError(
+            "La réponse de l'IA n'est pas un JSON valide.", unparseable=True
+        )
+    if not isinstance(data, dict):
+        raise AIServiceError(
+            "La réponse de l'IA n'a pas le format attendu.", unparseable=True
+        )
+
+    reply = str(data.get("reply") or "").strip()
+    ready = bool(data.get("ready_to_confirm"))
+    raw_proposal = data.get("proposal")
+    proposal = None
+
+    if ready and isinstance(raw_proposal, dict):
+        project = raw_proposal.get("project")
+        project = project if isinstance(project, dict) else {}
+        name = str(project.get("name") or "").strip()
+        description = str(project.get("description") or "")
+        raw_tasks = raw_proposal.get("tasks")
+        tasks = (
+            [n for t in raw_tasks if (n := _normalize_task(t))]
+            if isinstance(raw_tasks, list)
+            else []
+        )
+        if name and tasks:
+            proposal = {
+                "project": {"name": name, "description": description},
+                "tasks": tasks,
+            }
+
+    # Une proposition annoncée mais inexploitable ne doit pas être présentée
+    # comme prête à créer.
+    if proposal is None:
+        ready = False
+
+    return {"reply": reply, "ready_to_confirm": ready, "proposal": proposal}
+
+
+def chat(messages, project_tasks=None):
+    """Poursuit la conversation de planification et renvoie la réponse structurée.
+
+    `messages` : historique `[{role, content}, ...]` fourni par le front (déjà
+    validé par le serializer). `project_tasks` : tâches du projet existant à
+    injecter en contexte, ou None pour un nouveau projet. Ne crée rien : la
+    création passe par les endpoints existants (projects + tasks/confirm).
+    """
+    api_messages = [
+        {"role": "system", "content": _chat_system_prompt(project_tasks)},
+        *messages,
+    ]
+    try:
+        response = _client().chat.completions.create(
+            model=MODEL,
+            messages=api_messages,
+            response_format={"type": "json_object"},
+            temperature=0.3,
+        )
+    except OpenAIError as exc:
+        raise AIServiceError(f"Le service IA est indisponible : {exc}")
+
+    return _parse_chat_response(_message_content(response))

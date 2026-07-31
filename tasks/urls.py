@@ -2,6 +2,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    ChatView,
     ConfirmTasksView,
     DashboardView,
     GenerateTasksView,
@@ -17,5 +18,6 @@ router.register(r"tasks", TaskViewSet, basename="task")
 urlpatterns = [
     path("tasks/generate/", GenerateTasksView.as_view(), name="task_generate"),
     path("tasks/confirm/", ConfirmTasksView.as_view(), name="task_confirm"),
+    path("chat/", ChatView.as_view(), name="chat"),
     path("dashboard/", DashboardView.as_view(), name="dashboard"),
 ] + router.urls
