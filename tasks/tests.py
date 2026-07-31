@@ -1143,3 +1143,302 @@ class PolishTestCase(TestCase):
         # Encart centré, et pas d'en-tête de tableau vide.
         self.assertContains(response, "text-center text-muted")
         self.assertNotContains(response, "<th>Titre</th>")
+
+
+class AIAssistantTestCase(APITestCase):
+    """Tests de l'assistant IA (cf. tasks/SPEC-ai-assistant.md §8).
+
+    L'appel OpenAI est TOUJOURS mocké au niveau du client (`tasks.ai.OpenAI`) :
+    on exerce le vrai code de parsing/normalisation sans jamais toucher à l'API
+    réelle.
+    """
+
+    def setUp(self):
+        self.alice = User.objects.create_user(
+            username="alice", email="alice@example.com", password="pass12345"
+        )
+        self.bob = User.objects.create_user(
+            username="bob", email="bob@example.com", password="pass12345"
+        )
+        self.alice_project = Project.objects.create(
+            owner=self.alice, name="Projet Alice"
+        )
+        self.bob_project = Project.objects.create(
+            owner=self.bob, name="Projet Bob"
+        )
+        self.generate_url = reverse("task_generate")
+        self.confirm_url = reverse("task_confirm")
+
+    def _openai_returning(self, content):
+        """Mock du client OpenAI dont la complétion renvoie `content` (texte)."""
+        from unittest.mock import MagicMock
+
+        message = MagicMock()
+        message.content = content
+        choice = MagicMock()
+        choice.message = message
+        client = MagicMock()
+        client.chat.completions.create.return_value = MagicMock(choices=[choice])
+        return client
+
+    def _openai_raising(self, exc):
+        """Mock du client OpenAI dont la complétion lève `exc`."""
+        from unittest.mock import MagicMock
+
+        client = MagicMock()
+        client.chat.completions.create.side_effect = exc
+        return client
+
+    # --- generate ---
+
+    def test_generate_valid_returns_tasks_without_creating(self):
+        import json
+        from unittest.mock import patch
+
+        content = json.dumps(
+            {
+                "tasks": [
+                    {
+                        "title": "Réserver la salle",
+                        "description": "Pour la réunion",
+                        "priority": "haute",
+                        "status": "a_faire",
+                        "due_date": "2026-08-15",
+                    }
+                ]
+            }
+        )
+        self.client.force_authenticate(self.alice)
+        with patch(
+            "tasks.ai.OpenAI", return_value=self._openai_returning(content)
+        ):
+            response = self.client.post(
+                self.generate_url,
+                {"text": "Réserver la salle en priorité", "project_id": self.alice_project.pk},
+                format="json",
+            )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["tasks"]), 1)
+        self.assertEqual(response.data["tasks"][0]["title"], "Réserver la salle")
+        # Rien ne doit être créé en base à l'étape d'aperçu.
+        self.assertEqual(Task.objects.count(), 0)
+
+    def test_generate_normalizes_out_of_choices_values(self):
+        """Décision §5 : valeurs hors-choices normalisées au défaut, pas rejetées."""
+        import json
+        from unittest.mock import patch
+
+        content = json.dumps(
+            {
+                "tasks": [
+                    {
+                        "title": "Tâche bancale",
+                        "priority": "urgente",  # invalide → moyenne
+                        "status": "bloque",  # invalide → a_faire
+                        "due_date": "",  # vide → null
+                    }
+                ]
+            }
+        )
+        self.client.force_authenticate(self.alice)
+        with patch(
+            "tasks.ai.OpenAI", return_value=self._openai_returning(content)
+        ):
+            response = self.client.post(
+                self.generate_url,
+                {"text": "peu importe", "project_id": self.alice_project.pk},
+                format="json",
+            )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        task = response.data["tasks"][0]
+        self.assertEqual(task["priority"], Task.Priority.MEDIUM)
+        self.assertEqual(task["status"], Task.Status.TODO)
+        self.assertIsNone(task["due_date"])
+
+    def test_generate_project_of_another_user_returns_404(self):
+        from unittest.mock import patch
+
+        self.client.force_authenticate(self.alice)
+        # Le mock est en place mais ne doit même pas être appelé : le 404 tombe
+        # avant tout appel externe.
+        with patch(
+            "tasks.ai.OpenAI", return_value=self._openai_returning("{}")
+        ) as mocked:
+            response = self.client.post(
+                self.generate_url,
+                {"text": "quelque chose", "project_id": self.bob_project.pk},
+                format="json",
+            )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(Task.objects.count(), 0)
+        mocked.assert_not_called()
+
+    def test_generate_unparseable_response_returns_400(self):
+        from unittest.mock import patch
+
+        self.client.force_authenticate(self.alice)
+        with patch(
+            "tasks.ai.OpenAI",
+            return_value=self._openai_returning("désolé, voici du texte libre"),
+        ):
+            response = self.client.post(
+                self.generate_url,
+                {"text": "peu importe", "project_id": self.alice_project.pk},
+                format="json",
+            )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("detail", response.data)
+
+    def test_generate_empty_choices_returns_400(self):
+        """Réponse OpenAI sans `choices` → 400, jamais un 500 (IndexError)."""
+        from unittest.mock import MagicMock, patch
+
+        client = MagicMock()
+        client.chat.completions.create.return_value = MagicMock(choices=[])
+        self.client.force_authenticate(self.alice)
+        with patch("tasks.ai.OpenAI", return_value=client):
+            response = self.client.post(
+                self.generate_url,
+                {"text": "peu importe", "project_id": self.alice_project.pk},
+                format="json",
+            )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("detail", response.data)
+
+    def test_generate_openai_unavailable_returns_502(self):
+        from unittest.mock import patch
+
+        from openai import OpenAIError
+
+        self.client.force_authenticate(self.alice)
+        with patch(
+            "tasks.ai.OpenAI",
+            return_value=self._openai_raising(OpenAIError("timeout")),
+        ):
+            response = self.client.post(
+                self.generate_url,
+                {"text": "peu importe", "project_id": self.alice_project.pk},
+                format="json",
+            )
+        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+        self.assertIn("detail", response.data)
+
+    def test_generate_empty_text_returns_400(self):
+        self.client.force_authenticate(self.alice)
+        response = self.client.post(
+            self.generate_url,
+            {"text": "   ", "project_id": self.alice_project.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_generate_unauthenticated_returns_401(self):
+        response = self.client.post(
+            self.generate_url,
+            {"text": "peu importe", "project_id": self.alice_project.pk},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    # --- confirm ---
+
+    def test_confirm_creates_tasks(self):
+        self.client.force_authenticate(self.alice)
+        payload = {
+            "project_id": self.alice_project.pk,
+            "tasks": [
+                {
+                    "title": "Tâche 1",
+                    "description": "",
+                    "priority": "haute",
+                    "status": "a_faire",
+                    "due_date": "2026-08-15",
+                },
+                {
+                    "title": "Tâche 2",
+                    "description": "détail",
+                    "priority": "moyenne",
+                    "status": "en_cours",
+                    "due_date": None,
+                },
+            ],
+        }
+        response = self.client.post(self.confirm_url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(response.data), 2)
+        self.assertEqual(Task.objects.count(), 2)
+        # Rattachées au bon projet, quoi qu'ait pu contenir le corps.
+        self.assertTrue(
+            all(t.project_id == self.alice_project.pk for t in Task.objects.all())
+        )
+
+    def test_confirm_ignores_client_supplied_project_on_task(self):
+        """Le projet est fixé côté serveur, jamais pris depuis la tâche du corps."""
+        self.client.force_authenticate(self.alice)
+        payload = {
+            "project_id": self.alice_project.pk,
+            "tasks": [
+                {
+                    "title": "Tâche piégée",
+                    # Tentative d'injecter le projet d'un autre utilisateur.
+                    "project": self.bob_project.pk,
+                    "priority": "moyenne",
+                    "status": "a_faire",
+                    "due_date": None,
+                }
+            ],
+        }
+        response = self.client.post(self.confirm_url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        task = Task.objects.get()
+        self.assertEqual(task.project_id, self.alice_project.pk)
+
+    def test_confirm_project_of_another_user_returns_404(self):
+        self.client.force_authenticate(self.alice)
+        payload = {
+            "project_id": self.bob_project.pk,
+            "tasks": [
+                {
+                    "title": "Tâche",
+                    "priority": "moyenne",
+                    "status": "a_faire",
+                    "due_date": None,
+                }
+            ],
+        }
+        response = self.client.post(self.confirm_url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(Task.objects.count(), 0)
+
+    def test_confirm_invalid_task_is_atomic_and_returns_400(self):
+        """Une seule tâche invalide → 400 et aucune création (tout ou rien)."""
+        self.client.force_authenticate(self.alice)
+        payload = {
+            "project_id": self.alice_project.pk,
+            "tasks": [
+                {
+                    "title": "Valide",
+                    "priority": "moyenne",
+                    "status": "a_faire",
+                    "due_date": None,
+                },
+                {
+                    # Titre vide → invalide côté TaskSerializer.
+                    "title": "",
+                    "priority": "moyenne",
+                    "status": "a_faire",
+                    "due_date": None,
+                },
+            ],
+        }
+        response = self.client.post(self.confirm_url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Task.objects.count(), 0)
+
+    def test_confirm_unauthenticated_returns_401(self):
+        payload = {
+            "project_id": self.alice_project.pk,
+            "tasks": [{"title": "T", "priority": "moyenne", "status": "a_faire"}],
+        }
+        response = self.client.post(self.confirm_url, payload, format="json")
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)

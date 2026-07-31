@@ -32,6 +32,10 @@ SECRET_KEY = os.environ['SECRET_KEY']
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
+# Clé API OpenAI pour l'assistant IA (génération de tâches). Absente en test
+# (l'appel OpenAI y est toujours mocké) ; requise en dev/prod pour l'endpoint.
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+
 ALLOWED_HOSTS = [
     host.strip()
     for host in os.environ.get('ALLOWED_HOSTS', '').split(',')
