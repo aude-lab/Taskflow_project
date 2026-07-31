@@ -1289,6 +1289,29 @@ class AIAssistantTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("detail", response.data)
 
+    def test_generate_injects_current_date_in_system_prompt(self):
+        """Le prompt système envoyé à OpenAI contient la date du jour (serveur),
+        pour que les échéances relatives soient résolues correctement."""
+        import json
+        from unittest.mock import patch
+
+        from django.utils import timezone
+
+        content = json.dumps({"tasks": []})
+        client = self._openai_returning(content)
+        self.client.force_authenticate(self.alice)
+        with patch("tasks.ai.OpenAI", return_value=client):
+            self.client.post(
+                self.generate_url,
+                {"text": "une tâche pour demain", "project_id": self.alice_project.pk},
+                format="json",
+            )
+        # Inspecte les messages réellement passés au client OpenAI mocké.
+        _, kwargs = client.chat.completions.create.call_args
+        system_message = kwargs["messages"][0]
+        self.assertEqual(system_message["role"], "system")
+        self.assertIn(timezone.localdate().isoformat(), system_message["content"])
+
     def test_generate_empty_choices_returns_400(self):
         """Réponse OpenAI sans `choices` → 400, jamais un 500 (IndexError)."""
         from unittest.mock import MagicMock, patch
