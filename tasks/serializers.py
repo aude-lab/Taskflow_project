@@ -61,3 +61,28 @@ class ConfirmTasksSerializer(serializers.Serializer):
     tasks = serializers.ListField(
         child=serializers.DictField(), allow_empty=False
     )
+
+
+class ChatMessageSerializer(serializers.Serializer):
+    """Un message de l'historique de conversation renvoyé par le front."""
+
+    role = serializers.ChoiceField(choices=["user", "assistant"])
+    # allow_blank : un message assistant au contenu vide (reply vide renvoyé par
+    # le modèle) ne doit pas faire échouer l'appel suivant qui renvoie tout
+    # l'historique.
+    content = serializers.CharField(allow_blank=True)
+
+
+class ChatSerializer(serializers.Serializer):
+    """Valide l'entrée de POST /api/chat/ (assistant conversationnel).
+
+    `messages` est l'historique complet renvoyé par le front à chaque appel (pas
+    de mémoire serveur). `project_id` est optionnel : `null`/absent pour un
+    nouveau projet, sinon l'id d'un projet dont l'appartenance est revérifiée
+    dans la vue via `for_user()` (404).
+    """
+
+    messages = ChatMessageSerializer(many=True, allow_empty=False)
+    project_id = serializers.IntegerField(
+        required=False, allow_null=True, default=None
+    )

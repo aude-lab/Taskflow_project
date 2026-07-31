@@ -8,11 +8,12 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from .ai import AIServiceError, generate_tasks
+from .ai import AIServiceError, chat, generate_tasks
 from .dashboard import build_dashboard
 from .filters import TaskFilter
 from .models import Task
 from .serializers import (
+    ChatSerializer,
     ConfirmTasksSerializer,
     GenerateTasksSerializer,
     TaskSerializer,
@@ -152,3 +153,34 @@ class ConfirmTasksView(AIAssistantView):
             task_serializer.save()
 
         return Response(task_serializer.data, status=status.HTTP_201_CREATED)
+
+
+class ChatView(AIAssistantView):
+    """POST /api/chat/ — assistant conversationnel de planification (SPEC-ai-chat).
+
+    Ne crée RIEN : renvoie la réponse de l'IA et, quand elle est prête, une
+    proposition (projet + tâches). La création passe ensuite par les endpoints
+    existants (POST /api/projects/ puis POST /api/tasks/confirm/).
+    """
+
+    def post(self, request):
+        serializer = ChatSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # Contexte projet : si un projet est ciblé, on vérifie son appartenance
+        # (404 sinon) et on injecte ses tâches existantes dans le prompt système.
+        project_tasks = None
+        project_id = serializer.validated_data["project_id"]
+        if project_id is not None:
+            project = self.get_project(project_id)
+            project_tasks = project.tasks.all()
+
+        try:
+            result = chat(serializer.validated_data["messages"], project_tasks)
+        except AIServiceError as exc:
+            # Décision D2 : indisponibilité ET réponse non parseable → 502.
+            return Response(
+                {"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY
+            )
+
+        return Response(result)
