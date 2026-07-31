@@ -30,6 +30,45 @@
     </div>
   </div>
 
+  {# --- Assistant IA : génération de tâches en langage naturel --- #}
+  <div class="card shadow-sm mb-4" id="ai-assistant"
+       data-project-id="{{ project.pk }}">
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center">
+        <h2 class="h6 mb-0">Assistant IA</h2>
+        <button type="button" class="btn btn-sm btn-outline-primary"
+                id="ai-toggle">Générer des tâches avec l'IA</button>
+      </div>
+
+      <div id="ai-panel" class="d-none mt-3">
+        <label for="ai-text" class="form-label small text-muted">
+          Décris tes tâches en langage naturel, l'IA te proposera une liste à
+          valider avant création.
+        </label>
+        <textarea id="ai-text" class="form-control" rows="3"
+                  placeholder="Décris tes tâches en langage naturel..."></textarea>
+        <div class="mt-2">
+          <button type="button" class="btn btn-sm btn-primary" id="ai-analyze">
+            Analyser
+          </button>
+        </div>
+
+        {# Zone de message (erreurs réseau / IA), masquée par défaut. #}
+        <div id="ai-message" class="alert d-none mt-3 mb-0" role="alert"></div>
+
+        {# Aperçu des tâches proposées, rempli par le JS. #}
+        <div id="ai-preview" class="d-none mt-3">
+          <p class="small text-muted mb-2">
+            Sélectionne les tâches à créer :
+          </p>
+          <div id="ai-preview-list"></div>
+          <button type="button" class="btn btn-sm btn-success mt-2"
+                  id="ai-create">Créer les tâches sélectionnées</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="d-flex justify-content-between align-items-center mb-2">
     <h2 class="h5 mb-0">Tâches</h2>
     <a class="btn btn-sm btn-primary"
@@ -74,4 +113,162 @@
   </div>
 
   <a href="{% url 'project_list' %}">&larr; Retour aux projets</a>
+
+  <script>
+  (function () {
+    const root = document.getElementById("ai-assistant");
+    const projectId = parseInt(root.dataset.projectId, 10);
+    // Jeton CSRF : ces endpoints acceptent la session, qui impose le CSRF.
+    const csrfToken = "{{ csrf_token }}";
+
+    const PRIORITY_LABELS = {
+      basse: "Basse", moyenne: "Moyenne", haute: "Haute",
+    };
+
+    const toggle = document.getElementById("ai-toggle");
+    const panel = document.getElementById("ai-panel");
+    const text = document.getElementById("ai-text");
+    const analyzeBtn = document.getElementById("ai-analyze");
+    const message = document.getElementById("ai-message");
+    const preview = document.getElementById("ai-preview");
+    const previewList = document.getElementById("ai-preview-list");
+    const createBtn = document.getElementById("ai-create");
+
+    // Tâches proposées par la dernière analyse (source des cases cochées).
+    let proposed = [];
+
+    function showMessage(msgText, kind) {
+      message.textContent = msgText;
+      message.className = "alert alert-" + kind + " mt-3 mb-0";
+    }
+
+    function hideMessage() {
+      message.className = "alert d-none mt-3 mb-0";
+    }
+
+    function escapeHtml(value) {
+      const div = document.createElement("div");
+      div.textContent = value == null ? "" : String(value);
+      return div.innerHTML;
+    }
+
+    toggle.addEventListener("click", function () {
+      panel.classList.toggle("d-none");
+    });
+
+    async function analyze() {
+      const value = text.value.trim();
+      if (!value) {
+        showMessage("Décris d'abord tes tâches avant d'analyser.", "warning");
+        return;
+      }
+      hideMessage();
+      preview.classList.add("d-none");
+      analyzeBtn.disabled = true;
+      analyzeBtn.textContent = "Analyse en cours…";
+      try {
+        const response = await fetch("/api/tasks/generate/", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": csrfToken,
+          },
+          body: JSON.stringify({ text: value, project_id: projectId }),
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(function () { return {}; });
+          showMessage(
+            data.detail || "L'analyse a échoué. Réessaie dans un instant.",
+            "danger"
+          );
+          return;
+        }
+        const data = await response.json();
+        proposed = data.tasks || [];
+        renderPreview();
+      } catch (err) {
+        // Erreur réseau (serveur injoignable, hors ligne…).
+        showMessage(
+          "Impossible de contacter le serveur. Vérifie ta connexion.",
+          "danger"
+        );
+      } finally {
+        analyzeBtn.disabled = false;
+        analyzeBtn.textContent = "Analyser";
+      }
+    }
+
+    function renderPreview() {
+      if (proposed.length === 0) {
+        showMessage("L'IA n'a proposé aucune tâche. Reformule ta demande.", "info");
+        preview.classList.add("d-none");
+        return;
+      }
+      hideMessage();
+      previewList.innerHTML = proposed.map(function (task, index) {
+        const due = task.due_date
+          ? escapeHtml(task.due_date)
+          : "<span class=\"text-muted\">sans échéance</span>";
+        const priority = PRIORITY_LABELS[task.priority] || escapeHtml(task.priority);
+        return (
+          '<div class="form-check">' +
+            '<input class="form-check-input ai-check" type="checkbox" ' +
+              'value="' + index + '" id="ai-check-' + index + '" checked>' +
+            '<label class="form-check-label" for="ai-check-' + index + '">' +
+              "<strong>" + escapeHtml(task.title) + "</strong> " +
+              '<span class="badge bg-secondary">' + priority + "</span> " +
+              '<span class="small text-muted">' + due + "</span>" +
+            "</label>" +
+          "</div>"
+        );
+      }).join("");
+      preview.classList.remove("d-none");
+    }
+
+    async function createSelected() {
+      const checked = Array.from(
+        previewList.querySelectorAll(".ai-check:checked")
+      ).map(function (input) { return proposed[parseInt(input.value, 10)]; });
+
+      if (checked.length === 0) {
+        showMessage("Sélectionne au moins une tâche à créer.", "warning");
+        return;
+      }
+      hideMessage();
+      createBtn.disabled = true;
+      createBtn.textContent = "Création en cours…";
+      try {
+        const response = await fetch("/api/tasks/confirm/", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": csrfToken,
+          },
+          body: JSON.stringify({ project_id: projectId, tasks: checked }),
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(function () { return {}; });
+          showMessage(
+            data.detail || "La création a échoué. Vérifie les tâches proposées.",
+            "danger"
+          );
+          return;
+        }
+        // Succès : recharger pour voir les nouvelles tâches dans le tableau.
+        window.location.reload();
+      } catch (err) {
+        showMessage(
+          "Impossible de contacter le serveur. Vérifie ta connexion.",
+          "danger"
+        );
+      } finally {
+        createBtn.disabled = false;
+        createBtn.textContent = "Créer les tâches sélectionnées";
+      }
+    }
+
+    analyzeBtn.addEventListener("click", analyze);
+    createBtn.addEventListener("click", createSelected);
+  })();
+  </script>
 {% endblock %}
