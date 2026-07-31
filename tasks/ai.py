@@ -9,6 +9,7 @@ parsing/normalisation de la réponse). Les vues n'appellent que
 import json
 
 from django.conf import settings
+from django.utils import timezone
 from openai import OpenAI, OpenAIError
 
 from .models import Task
@@ -79,6 +80,23 @@ class AIServiceError(Exception):
 def _client():
     """Instancie le client OpenAI avec la clé et le timeout configurés."""
     return OpenAI(api_key=settings.OPENAI_API_KEY, timeout=TIMEOUT_SECONDS)
+
+
+def _system_prompt():
+    """Prompt système complété par la date du jour (serveur).
+
+    Le modèle ne connaît pas la date courante : sans cette précision, une
+    échéance relative (« vendredi prochain », « demain ») est résolue au petit
+    bonheur, souvent dans le passé. On injecte donc la date du serveur au moment
+    de l'appel — d'où une fonction plutôt qu'une constante.
+    """
+    today = timezone.localdate().isoformat()
+    return (
+        f"{SYSTEM_PROMPT}\n\n"
+        f"Nous sommes aujourd'hui le {today}. Résous toute date relative "
+        f"(« demain », « vendredi prochain », « dans deux semaines ») par "
+        f"rapport à cette date, et n'utilise jamais une échéance dans le passé."
+    )
 
 
 def _normalize_task(raw):
@@ -164,7 +182,7 @@ def generate_tasks(text):
         response = _client().chat.completions.create(
             model=MODEL,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": _system_prompt()},
                 {"role": "user", "content": text},
             ],
             # Force une sortie JSON côté API : filet de sécurité complémentaire
