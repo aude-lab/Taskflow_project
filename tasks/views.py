@@ -183,4 +183,34 @@ class ChatView(AIAssistantView):
                 {"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY
             )
 
+        # En réajustement, l'IA connaît les tâches existantes mais peut les
+        # inclure dans sa proposition : on les retire pour ne créer que les
+        # nouvelles (sinon la confirmation dupliquerait l'existant).
+        if project_tasks is not None:
+            self._drop_existing_tasks(result, project_tasks)
+
         return Response(result)
+
+    @staticmethod
+    def _drop_existing_tasks(result, project_tasks):
+        """Retire de la proposition les tâches dont le titre existe déjà dans le
+        projet (comparaison normalisée casse/espaces).
+
+        Modifie `result` sur place. Si plus aucune tâche nouvelle ne reste, la
+        proposition n'a plus lieu d'être : on repasse `ready_to_confirm` à false
+        et `proposal` à null (le `reply` de l'IA est conservé).
+        """
+        proposal = result.get("proposal")
+        if not proposal:
+            return
+        existing = {t.title.strip().casefold() for t in project_tasks}
+        new_tasks = [
+            task
+            for task in proposal["tasks"]
+            if task["title"].strip().casefold() not in existing
+        ]
+        if new_tasks:
+            proposal["tasks"] = new_tasks
+        else:
+            result["proposal"] = None
+            result["ready_to_confirm"] = False
