@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 from pathlib import Path
 
+import dj_database_url
 from django.contrib.messages import constants as message_constants
 from dotenv import load_dotenv
 
@@ -40,6 +41,20 @@ ALLOWED_HOSTS = [
     host.strip()
     for host in os.environ.get('ALLOWED_HOSTS', '').split(',')
     if host.strip()
+]
+# En prod serverless (Vercel), le domaine est *.vercel.app : on l'autorise
+# toujours, en plus des hôtes fournis par l'environnement.
+ALLOWED_HOSTS += ['.vercel.app']
+if not ALLOWED_HOSTS or ALLOWED_HOSTS == ['.vercel.app']:
+    ALLOWED_HOSTS += ['localhost', '127.0.0.1']
+
+# Django 4+ exige des origines de confiance pour les POST cross-origin en HTTPS
+# (connexion, formulaires, fetch de l'assistant). On fait confiance au domaine
+# Vercel et à toute origine fournie par l'environnement.
+CSRF_TRUSTED_ORIGINS = ['https://*.vercel.app'] + [
+    origin.strip()
+    for origin in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',')
+    if origin.strip()
 ]
 
 
@@ -96,16 +111,35 @@ WSGI_APPLICATION = 'taskflow.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ['DB_NAME'],
-        'USER': os.environ['DB_USER'],
-        'PASSWORD': os.environ['DB_PASSWORD'],
-        'HOST': os.environ.get('DB_HOST', 'localhost'),
-        'PORT': os.environ.get('DB_PORT', '5432'),
+# En production, la base est fournie par une URL de connexion. Vercel Postgres
+# expose plusieurs variables : on privilégie la connexion NON poolée (directe),
+# adaptée à Django et aux migrations. En local (aucune URL), on retombe sur les
+# variables DB_* du .env.
+DATABASE_URL = (
+    os.environ.get('DATABASE_URL')
+    or os.environ.get('POSTGRES_URL_NON_POOLING')
+    or os.environ.get('POSTGRES_URL')
+)
+if DATABASE_URL:
+    DATABASES = {
+        'default': dj_database_url.parse(
+            DATABASE_URL,
+            # Serverless : pas de connexions persistantes entre invocations.
+            conn_max_age=0,
+            ssl_require=True,
+        )
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.environ['DB_NAME'],
+            'USER': os.environ['DB_USER'],
+            'PASSWORD': os.environ['DB_PASSWORD'],
+            'HOST': os.environ.get('DB_HOST', 'localhost'),
+            'PORT': os.environ.get('DB_PORT', '5432'),
+        }
+    }
 
 
 # Password validation
@@ -146,6 +180,9 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+# `collectstatic` (lancé au build Vercel par build_files.sh) rassemble les
+# fichiers ici ; Vercel sert ce dossier via la route /static/ (cf. vercel.json).
+STATIC_ROOT = BASE_DIR / 'staticfiles_build' / 'static'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field
