@@ -27,3 +27,6 @@ media/
 
 # Maquettes de design (référence locale, non versionnée)
 maquette/
+
+# Fichiers statiques collectés (STATIC_ROOT)
+staticfiles/

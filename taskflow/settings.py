@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 from pathlib import Path
 
+import dj_database_url
 from django.contrib.messages import constants as message_constants
 from dotenv import load_dotenv
 
@@ -41,6 +42,18 @@ ALLOWED_HOSTS = [
     for host in os.environ.get('ALLOWED_HOSTS', '').split(',')
     if host.strip()
 ]
+# En production (Railway), le domaine est *.railway.app : on l'autorise toujours.
+ALLOWED_HOSTS += ['.railway.app']
+if ALLOWED_HOSTS == ['.railway.app']:
+    ALLOWED_HOSTS += ['localhost', '127.0.0.1']
+
+# Django exige des origines de confiance pour les POST HTTPS cross-origin
+# (connexion, formulaires, fetch de l'assistant).
+CSRF_TRUSTED_ORIGINS = ['https://*.railway.app'] + [
+    origin.strip()
+    for origin in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',')
+    if origin.strip()
+]
 
 
 # Application definition
@@ -65,6 +78,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # WhiteNoise sert les fichiers statiques en prod (juste après Security,
+    # comme recommandé). Indispensable là où aucun serveur web ne sert /static.
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -96,16 +112,24 @@ WSGI_APPLICATION = 'taskflow.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ['DB_NAME'],
-        'USER': os.environ['DB_USER'],
-        'PASSWORD': os.environ['DB_PASSWORD'],
-        'HOST': os.environ.get('DB_HOST', 'localhost'),
-        'PORT': os.environ.get('DB_PORT', '5432'),
+# En prod, Railway fournit DATABASE_URL. En local (aucune URL), on garde les
+# variables DB_* du .env : le développement n'est pas affecté.
+DATABASE_URL = os.environ.get('DATABASE_URL')
+if DATABASE_URL:
+    DATABASES = {
+        'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.environ['DB_NAME'],
+            'USER': os.environ['DB_USER'],
+            'PASSWORD': os.environ['DB_PASSWORD'],
+            'HOST': os.environ.get('DB_HOST', 'localhost'),
+            'PORT': os.environ.get('DB_PORT', '5432'),
+        }
+    }
 
 
 # Password validation
@@ -146,6 +170,10 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+# WhiteNoise sert les statiques via les finders (dossiers static/ des apps),
+# sans nécessiter `collectstatic` — build de déploiement minimal.
+WHITENOISE_USE_FINDERS = True
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field
