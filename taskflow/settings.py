@@ -13,7 +13,6 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 from pathlib import Path
 
-import dj_database_url
 from django.contrib.messages import constants as message_constants
 from dotenv import load_dotenv
 
@@ -42,24 +41,6 @@ ALLOWED_HOSTS = [
     for host in os.environ.get('ALLOWED_HOSTS', '').split(',')
     if host.strip()
 ]
-# En prod, on autorise toujours les domaines des plateformes d'hébergement
-# (Railway, Render, Vercel), en plus des hôtes fournis par l'environnement.
-_PLATFORM_HOSTS = ['.up.railway.app', '.railway.app', '.onrender.com', '.vercel.app']
-ALLOWED_HOSTS += _PLATFORM_HOSTS
-if set(ALLOWED_HOSTS) <= set(_PLATFORM_HOSTS):
-    ALLOWED_HOSTS += ['localhost', '127.0.0.1']
-
-# Django 4+ exige des origines de confiance pour les POST cross-origin en HTTPS
-# (connexion, formulaires, fetch de l'assistant). On fait confiance aux domaines
-# d'hébergement et à toute origine fournie par l'environnement.
-CSRF_TRUSTED_ORIGINS = [
-    'https://*.up.railway.app', 'https://*.railway.app',
-    'https://*.onrender.com', 'https://*.vercel.app',
-] + [
-    origin.strip()
-    for origin in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',')
-    if origin.strip()
-]
 
 
 # Application definition
@@ -84,10 +65,6 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    # WhiteNoise sert les fichiers statiques directement depuis l'app (juste
-    # après SecurityMiddleware, comme recommandé). Indispensable en prod
-    # serverless (Vercel) où aucun serveur web ne sert /static.
-    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -119,41 +96,16 @@ WSGI_APPLICATION = 'taskflow.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-# En production, la base est fournie par une URL de connexion. Vercel Postgres
-# expose plusieurs variables : on privilégie la connexion NON poolée (directe),
-# adaptée à Django et aux migrations. En local (aucune URL), on retombe sur les
-# variables DB_* du .env.
-DATABASE_URL = (
-    os.environ.get('DATABASE_URL')
-    or os.environ.get('POSTGRES_URL_NON_POOLING')
-    or os.environ.get('POSTGRES_URL')
-)
-if DATABASE_URL:
-    DATABASES = {
-        'default': dj_database_url.parse(
-            DATABASE_URL,
-            # Serveur persistant (Render/gunicorn) : on réutilise les connexions.
-            conn_max_age=600,
-            # On ne force pas le SSL ici : les URL managées (Neon, Vercel) le
-            # portent déjà via `sslmode=require` ; la base interne de Render, elle,
-            # n'en a pas besoin. Forcer casserait ce dernier cas.
-        )
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ['DB_NAME'],
+        'USER': os.environ['DB_USER'],
+        'PASSWORD': os.environ['DB_PASSWORD'],
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DB_PORT', '5432'),
     }
-else:
-    # `.get` avec valeurs par défaut : `collectstatic` au build importe les
-    # settings sans qu'une base soit forcément configurée ; il ne s'y connecte
-    # pas, donc on évite un KeyError qui casserait le build. En local, les
-    # variables DB_* du .env priment.
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.environ.get('DB_NAME', 'taskflow'),
-            'USER': os.environ.get('DB_USER', 'taskflow'),
-            'PASSWORD': os.environ.get('DB_PASSWORD', ''),
-            'HOST': os.environ.get('DB_HOST', 'localhost'),
-            'PORT': os.environ.get('DB_PORT', '5432'),
-        }
-    }
+}
 
 
 # Password validation
@@ -194,11 +146,6 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
-STATIC_ROOT = BASE_DIR / 'staticfiles_build' / 'static'
-# WhiteNoise sert les statiques via les finders (répertoires static/ des apps),
-# sans nécessiter `collectstatic` au build — ce qui simplifie le déploiement
-# serverless. Les fichiers de l'admin et des apps sont trouvés à l'exécution.
-WHITENOISE_USE_FINDERS = True
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field
