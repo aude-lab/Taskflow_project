@@ -1648,6 +1648,89 @@ class ChatAPITestCase(APITestCase):
         self.assertEqual(kwargs["messages"][0]["role"], "system")
         self.assertIn(timezone.localdate().isoformat(), system_content)
 
+    def test_chat_readjust_drops_existing_tasks_from_proposal(self):
+        """Réajustement : une tâche proposée au titre déjà existant est retirée,
+        seules les nouvelles restent (sinon confirm dupliquerait l'existant)."""
+        import json
+        from unittest.mock import patch
+
+        Task.objects.create(title="Tâche existante", project=self.alice_project)
+        content = json.dumps(
+            {
+                "reply": "Voici le plan.",
+                "ready_to_confirm": True,
+                "proposal": {
+                    "project": {"name": "Projet Alice", "description": ""},
+                    "tasks": [
+                        # Doublon (casse/espaces différents) → doit être retiré.
+                        {"title": "  tâche EXISTANTE ", "priority": "moyenne",
+                         "status": "a_faire", "due_date": None},
+                        {"title": "Nouvelle tâche", "priority": "haute",
+                         "status": "a_faire", "due_date": None},
+                    ],
+                },
+            }
+        )
+        self.client.force_authenticate(self.alice)
+        with patch("tasks.ai.OpenAI", return_value=self._openai_returning(content)):
+            response = self._post(project_id=self.alice_project.pk)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        titles = [t["title"] for t in response.data["proposal"]["tasks"]]
+        self.assertEqual(titles, ["Nouvelle tâche"])
+        self.assertTrue(response.data["ready_to_confirm"])
+
+    def test_chat_readjust_all_existing_falls_back_to_not_ready(self):
+        """Réajustement : si toutes les tâches proposées existent déjà, plus rien
+        à ajouter → ready_to_confirm false et proposal null."""
+        import json
+        from unittest.mock import patch
+
+        Task.objects.create(title="Déjà là", project=self.alice_project)
+        content = json.dumps(
+            {
+                "reply": "Voici le plan.",
+                "ready_to_confirm": True,
+                "proposal": {
+                    "project": {"name": "Projet Alice", "description": ""},
+                    "tasks": [
+                        {"title": "Déjà là", "priority": "moyenne",
+                         "status": "a_faire", "due_date": None},
+                    ],
+                },
+            }
+        )
+        self.client.force_authenticate(self.alice)
+        with patch("tasks.ai.OpenAI", return_value=self._openai_returning(content)):
+            response = self._post(project_id=self.alice_project.pk)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertFalse(response.data["ready_to_confirm"])
+        self.assertIsNone(response.data["proposal"])
+
+    def test_chat_new_project_does_not_filter_proposal(self):
+        """Sans project_id (nouveau projet), aucune tâche n'est filtrée."""
+        import json
+        from unittest.mock import patch
+
+        # Une tâche de même titre existe, mais dans un AUTRE projet : hors contexte.
+        Task.objects.create(title="Nouvelle tâche", project=self.alice_project)
+        content = json.dumps(
+            {
+                "reply": "Plan.",
+                "ready_to_confirm": True,
+                "proposal": {
+                    "project": {"name": "Tout autre projet", "description": ""},
+                    "tasks": [
+                        {"title": "Nouvelle tâche", "priority": "moyenne",
+                         "status": "a_faire", "due_date": None},
+                    ],
+                },
+            }
+        )
+        self.client.force_authenticate(self.alice)
+        with patch("tasks.ai.OpenAI", return_value=self._openai_returning(content)):
+            response = self._post(project_id=None)
+        self.assertEqual(len(response.data["proposal"]["tasks"]), 1)
+
     def test_chat_project_of_another_user_returns_404(self):
         from unittest.mock import patch
 
