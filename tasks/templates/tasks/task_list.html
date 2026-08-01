@@ -4,95 +4,91 @@
 {% block title %}Mes tâches — TaskFlow{% endblock %}
 
 {% block content %}
-  <h1 class="h3 mb-3">Mes tâches</h1>
+  <h1 class="font-display-lg text-display-lg text-primary tracking-tight mb-6">Mes tâches</h1>
 
   {# Filtres — formulaire GET (partageable via l'URL, pas de CSRF). #}
-  <form method="get" class="card card-body shadow-sm mb-4">
-    <div class="row g-3 align-items-end">
-      <div class="col-md-3">
-        <label class="form-label" for="f-project">Projet</label>
-        <select class="form-select" id="f-project" name="project">
+  <form method="get" class="tf-form bg-surface-container-lowest rounded-xl shadow-sm p-6 mb-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-end">
+      <div>
+        <label class="block font-label-sm text-label-sm text-on-surface-variant mb-1" for="f-project">Projet</label>
+        <select id="f-project" name="project">
           <option value="">Tous</option>
           {% for p in projects %}
-            <option value="{{ p.pk }}"
-              {% if p.pk|stringformat:"s" == selected_project %}selected{% endif %}>
-              {{ p.name }}
-            </option>
+            <option value="{{ p.pk }}" {% if p.pk|stringformat:"s" == selected_project %}selected{% endif %}>{{ p.name }}</option>
           {% endfor %}
         </select>
       </div>
-      <div class="col-md-3">
-        <label class="form-label" for="f-status">Statut</label>
-        <select class="form-select" id="f-status" name="status">
+      <div>
+        <label class="block font-label-sm text-label-sm text-on-surface-variant mb-1" for="f-status">Statut</label>
+        <select id="f-status" name="status">
           <option value="">Tous</option>
           {% for value, label in status_choices %}
-            <option value="{{ value }}"
-              {% if value == selected_status %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ value }}" {% if value == selected_status %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </div>
-      <div class="col-md-3">
-        <label class="form-label" for="f-priority">Priorité</label>
-        <select class="form-select" id="f-priority" name="priority">
+      <div>
+        <label class="block font-label-sm text-label-sm text-on-surface-variant mb-1" for="f-priority">Priorité</label>
+        <select id="f-priority" name="priority">
           <option value="">Toutes</option>
           {% for value, label in priority_choices %}
-            <option value="{{ value }}"
-              {% if value == selected_priority %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ value }}" {% if value == selected_priority %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
       </div>
-      <div class="col-md-3">
-        <label class="form-label" for="f-after">Échéance à partir du</label>
-        <input type="date" class="form-control" id="f-after"
-               name="due_date_after" value="{{ due_date_after }}">
+      <div>
+        <label class="block font-label-sm text-label-sm text-on-surface-variant mb-1" for="f-after">Échéance à partir du</label>
+        <input type="date" id="f-after" name="due_date_after" value="{{ due_date_after }}">
       </div>
-      <div class="col-md-3">
-        <label class="form-label" for="f-before">Échéance jusqu'au</label>
-        <input type="date" class="form-control" id="f-before"
-               name="due_date_before" value="{{ due_date_before }}">
+      <div>
+        <label class="block font-label-sm text-label-sm text-on-surface-variant mb-1" for="f-before">Échéance jusqu'au</label>
+        <input type="date" id="f-before" name="due_date_before" value="{{ due_date_before }}">
       </div>
-      <div class="col-md-3">
-        <button type="submit" class="btn btn-primary">Filtrer</button>
-        <a class="btn btn-outline-secondary" href="{% url 'task_list' %}">Réinitialiser</a>
+      <div class="flex gap-2">
+        <button type="submit" class="bg-primary text-on-primary px-5 py-2.5 rounded-lg font-medium hover:opacity-90 transition-all">Filtrer</button>
+        <a href="{% url 'task_list' %}" class="px-5 py-2.5 rounded-lg border border-outline-variant text-on-surface-variant hover:bg-surface-container transition-colors">Réinitialiser</a>
       </div>
     </div>
   </form>
 
   {% if tasks %}
-    <div class="card shadow-sm">
-      <table class="table table-hover mb-0 align-middle">
-        <thead>
-          <tr>
-            <th>Titre</th>
-            <th>Projet</th>
-            <th>Statut</th>
-            <th>Priorité</th>
-            <th>Échéance</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for task in tasks %}
-            <tr>
-              <td><a href="{% url 'task_update' task.pk %}">{{ task.title }}</a></td>
-              <td class="text-muted">{{ task.project.name }}</td>
-              <td>{% status_badge task.status %}</td>
-              <td>{% priority_badge task.priority %}</td>
-              <td class="{% if task|is_overdue %}text-danger fw-semibold{% endif %}">
-                {{ task.due_date|date:"d/m/Y"|default:"—" }}
-              </td>
+    <div class="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden border border-surface-container-high">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left">
+          <thead>
+            <tr class="bg-surface-container-low border-b border-surface-container-high">
+              <th class="px-6 py-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Titre</th>
+              <th class="px-6 py-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Projet</th>
+              <th class="px-6 py-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Statut</th>
+              <th class="px-6 py-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Priorité</th>
+              <th class="px-6 py-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Échéance</th>
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+          </thead>
+          <tbody class="divide-y divide-surface-container-high">
+            {% for task in tasks %}
+              <tr class="hover:bg-surface-container-lowest transition-colors">
+                <td class="px-6 py-4 font-body-md font-medium">
+                  <a href="{% url 'task_update' task.pk %}" class="text-on-surface hover:text-primary transition-colors">{{ task.title }}</a>
+                </td>
+                <td class="px-6 py-4 text-on-surface-variant">{{ task.project.name }}</td>
+                <td class="px-6 py-4">{% status_badge task.status %}</td>
+                <td class="px-6 py-4">{% priority_badge task.priority %}</td>
+                <td class="px-6 py-4 {% if task|is_overdue %}text-error font-semibold{% else %}text-on-surface{% endif %}">
+                  {{ task.due_date|date:"d/m/Y"|default:"—" }}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
   {% else %}
-    <div class="text-center text-muted py-5">
+    <div class="bg-surface-container-lowest rounded-xl shadow-sm py-12 px-6 text-center text-on-surface-variant">
       {% if has_filters %}
-        <p class="mb-2">Aucune tâche ne correspond à ces filtres.</p>
-        <a class="btn btn-sm btn-outline-secondary"
-           href="{% url 'task_list' %}">Réinitialiser les filtres</a>
+        <p class="mb-3">Aucune tâche ne correspond à ces filtres.</p>
+        <a href="{% url 'task_list' %}" class="inline-block px-5 py-2.5 rounded-lg border border-outline-variant hover:bg-surface-container transition-colors">Réinitialiser les filtres</a>
       {% else %}
-        <p class="mb-0">Vous n'avez pas encore de tâche.</p>
+        <p>Vous n'avez pas encore de tâche.</p>
       {% endif %}
     </div>
   {% endif %}

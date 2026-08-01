@@ -293,7 +293,7 @@ class ProjectFrontTestCase(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("name", response.context["form"].errors)
         # L'erreur doit être visible, pas seulement présente dans form.errors.
-        self.assertContains(response, "text-danger")
+        self.assertContains(response, "text-error")
         self.assertEqual(Project.objects.filter(owner=self.alice).count(), 1)
 
     def test_name_too_long_rejected(self):
@@ -390,7 +390,8 @@ class ProjectFrontTestCase(TestCase):
         Task.objects.create(title="T2", project=self.alice_project)
         Task.objects.create(title="T3", project=self.alice_project)
         response = self.client.get(reverse("project_list"))
-        self.assertContains(response, "<td>3</td>", html=True)
+        # Le compteur de tâches apparaît dans la carte du projet.
+        self.assertContains(response, "3 tâches")
 
     # --- Performance ---
 

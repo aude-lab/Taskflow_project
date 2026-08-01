@@ -398,7 +398,7 @@ class RegistrationViewTestCase(TestCase):
         # inaperçu (Django n'échoue pas sur une variable manquante).
         response = self.client.post(self.url, self.payload(email=""))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "text-danger")
+        self.assertContains(response, "text-error")
 
     def test_login_error_is_rendered_in_html(self):
         response = self.client.post(

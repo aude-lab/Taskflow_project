@@ -1,64 +1,206 @@
 {% load static %}
 <!DOCTYPE html>
-<html lang="fr">
+<html class="light" lang="fr">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}TaskFlow{% endblock %}</title>
   <link rel="icon" href="{% static 'core/logo.png' %}">
-  <link
-    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-    rel="stylesheet">
-</head>
-<body class="bg-light">
 
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-  <div class="container">
-    <a class="navbar-brand" href="{% url 'home' %}">TaskFlow</a>
-    {% if user.is_authenticated %}
-      {% with section=request.resolver_match.url_name|default:"" %}
-      <div class="navbar-nav me-auto">
-        {# Sur le nom d'URL (project_* / task_*) : le chemin serait ambigu, la
-           création de tâche vivant sous /projets/<pk>/taches/. #}
-        <a class="nav-link {% if 'project' in section %}active{% endif %}"
-           href="{% url 'project_list' %}">Projets</a>
-        <a class="nav-link {% if 'task' in section %}active{% endif %}"
-           href="{% url 'task_list' %}">Tâches</a>
-      </div>
-      {% endwith %}
-    {% endif %}
-    <div class="ms-auto d-flex align-items-center gap-3">
-      {% if user.is_authenticated %}
-        <span class="navbar-text">{{ user.username }}</span>
-        {# LogoutView n'accepte que POST depuis Django 5 : un lien donnerait 405. #}
-        <form method="post" action="{% url 'logout' %}" class="d-inline">
+  <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+  <script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "tertiary": "#006c49", "secondary-container": "#9c48ea", "on-secondary": "#ffffff",
+            "tertiary-fixed-dim": "#4edea3", "surface-dim": "#d8dadc", "on-surface": "#191c1e",
+            "on-tertiary-fixed-variant": "#005236", "primary-fixed": "#e1e0ff", "outline-variant": "#c7c4d7",
+            "on-primary-container": "#fffbff", "on-background": "#191c1e", "surface-bright": "#f7f9fb",
+            "tertiary-fixed": "#6ffbbe", "on-error": "#ffffff", "surface": "#f7f9fb",
+            "inverse-primary": "#c0c1ff", "surface-container-high": "#e6e8ea", "on-primary-fixed": "#07006c",
+            "surface-container-lowest": "#ffffff", "surface-container": "#eceef0", "on-surface-variant": "#464554",
+            "on-secondary-fixed-variant": "#6900b3", "tertiary-container": "#00885d", "error": "#ba1a1a",
+            "primary-container": "#6063ee", "secondary": "#8127cf", "inverse-surface": "#2d3133",
+            "on-primary-fixed-variant": "#2f2ebe", "primary-fixed-dim": "#c0c1ff", "inverse-on-surface": "#eff1f3",
+            "on-error-container": "#93000a", "on-tertiary-fixed": "#002113", "on-tertiary": "#ffffff",
+            "on-secondary-fixed": "#2c0051", "outline": "#767586", "surface-container-low": "#f2f4f6",
+            "surface-variant": "#e0e3e5", "on-primary": "#ffffff", "background": "#f7f9fb",
+            "secondary-fixed-dim": "#ddb7ff", "secondary-fixed": "#f0dbff", "surface-container-highest": "#e0e3e5",
+            "surface-tint": "#494bd6", "primary": "#4648d4", "error-container": "#ffdad6",
+            "on-secondary-container": "#fffbff", "on-tertiary-container": "#000703"
+          },
+          "borderRadius": { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
+          "spacing": { "base": "8px", "container-padding": "24px", "stack-md": "12px", "gutter": "16px", "stack-sm": "4px", "stack-lg": "24px" },
+          "fontFamily": {
+            "headline-lg-mobile": ["Geist"], "headline-lg": ["Geist"], "label-sm": ["JetBrains Mono"],
+            "display-lg": ["Geist"], "body-md": ["Geist"]
+          },
+          "fontSize": {
+            "headline-lg-mobile": ["24px", {"lineHeight": "32px", "fontWeight": "600"}],
+            "headline-lg": ["32px", {"lineHeight": "40px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+            "label-sm": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "500"}],
+            "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+            "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}]
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: 'Geist', sans-serif; }
+    .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; vertical-align: middle; }
+    .glass-card { background: rgba(255,255,255,0.7); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.3); }
+    .ai-card { position: relative; overflow: hidden; }
+    .ai-card::before {
+      content: ''; position: absolute; inset: 0; padding: 1.5px; border-radius: 0.75rem;
+      background: linear-gradient(to bottom right, #4648d4, #006c49, #9c48ea);
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none;
+    }
+    .status-pill { transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); }
+    .status-pill:hover { transform: translateY(-4px); }
+    .shadow-level-1 { box-shadow: 0px 4px 20px rgba(0,0,0,0.04); }
+    .hover-lift { transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1); }
+    .hover-lift:hover { transform: translateY(-4px); }
+    /* Champs de formulaire Django (widgets sans classes) rendus cohérents. */
+    .tf-form input:not([type=checkbox]):not([type=radio]):not([type=submit]),
+    .tf-form select, .tf-form textarea {
+      width: 100%; background: #f2f4f6; border: 1px solid #c7c4d7;
+      border-radius: 0.5rem; padding: 0.55rem 0.75rem; color: #191c1e; font-size: 16px;
+    }
+    .tf-form input:focus, .tf-form select:focus, .tf-form textarea:focus {
+      outline: none; border-color: #4648d4; box-shadow: 0 0 0 3px rgba(70,72,212,0.15);
+    }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+
+<body class="bg-background text-on-background min-h-screen">
+
+{% with url_name=request.resolver_match.url_name %}
+{% if user.is_authenticated %}
+  <aside class="hidden md:flex flex-col h-screen w-64 fixed left-0 top-0 bg-surface shadow-sm py-stack-lg px-gutter z-50">
+    <div class="mb-10 px-2">
+      <a href="{% url 'home' %}" class="font-headline-lg text-headline-lg font-bold text-primary">TaskFlow</a>
+    </div>
+    <nav class="flex-1 space-y-2">
+      <a href="{% url 'home' %}" {% if url_name == 'home' %}data-active="dashboard" aria-current="page"{% endif %}
+         class="flex items-center gap-3 px-4 py-3 rounded-lg transition-colors {% if url_name == 'home' %}text-primary font-bold border-r-2 border-primary bg-surface-container-low{% else %}text-on-surface-variant hover:bg-surface-container{% endif %}">
+        <span class="material-symbols-outlined">dashboard</span>
+        <span class="font-body-md text-body-md">Tableau de bord</span>
+      </a>
+      <a href="{% url 'project_list' %}" {% if 'project' in url_name %}data-active="projects" aria-current="page"{% endif %}
+         class="flex items-center gap-3 px-4 py-3 rounded-lg transition-colors {% if 'project' in url_name %}text-primary font-bold border-r-2 border-primary bg-surface-container-low{% else %}text-on-surface-variant hover:bg-surface-container{% endif %}">
+        <span class="material-symbols-outlined">folder</span>
+        <span class="font-body-md text-body-md">Projets</span>
+      </a>
+      <a href="{% url 'assistant' %}" {% if url_name == 'assistant' %}data-active="assistant" aria-current="page"{% endif %}
+         class="flex items-center gap-3 px-4 py-3 rounded-lg transition-colors {% if url_name == 'assistant' %}text-primary font-bold border-r-2 border-primary bg-surface-container-low{% else %}text-on-surface-variant hover:bg-surface-container{% endif %}">
+        <span class="material-symbols-outlined">smart_toy</span>
+        <span class="font-body-md text-body-md">Assistant IA</span>
+      </a>
+      <a href="{% url 'task_list' %}" {% if 'task' in url_name %}data-active="tasks" aria-current="page"{% endif %}
+         class="flex items-center gap-3 px-4 py-3 rounded-lg transition-colors {% if 'task' in url_name %}text-primary font-bold border-r-2 border-primary bg-surface-container-low{% else %}text-on-surface-variant hover:bg-surface-container{% endif %}">
+        <span class="material-symbols-outlined">checklist</span>
+        <span class="font-body-md text-body-md">Tâches</span>
+      </a>
+    </nav>
+    <a href="{% url 'project_create' %}"
+       class="mt-auto bg-primary text-on-primary font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-all active:scale-[0.98]">
+      <span class="material-symbols-outlined">add</span>
+      <span>Nouveau projet</span>
+    </a>
+  </aside>
+
+  <main class="md:ml-64 min-h-screen flex flex-col">
+    <header class="sticky top-0 z-40 h-16 flex justify-end items-center px-container-padding bg-surface/80 backdrop-blur-md">
+      <div class="flex items-center gap-3">
+        <p class="text-body-md font-bold text-on-surface leading-none hidden sm:block">{{ user.username }}</p>
+        <div class="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container font-bold uppercase">
+          {{ user.username|slice:":1" }}
+        </div>
+        {# LogoutView n'accepte que POST depuis Django 5. #}
+        <form method="post" action="{% url 'logout' %}" class="ml-2">
           {% csrf_token %}
-          <button type="submit" class="btn btn-outline-light btn-sm">
-            Déconnexion
+          <button type="submit"
+                  class="px-3 py-2 rounded-lg text-on-surface-variant hover:bg-surface-container transition-colors flex items-center gap-1">
+            <span class="material-symbols-outlined text-xl">logout</span>
+            <span class="hidden lg:inline text-body-md">Déconnexion</span>
           </button>
         </form>
-      {% else %}
-        <a class="btn btn-outline-light btn-sm" href="{% url 'login' %}">Connexion</a>
-        <a class="btn btn-light btn-sm" href="{% url 'registration' %}">Inscription</a>
+      </div>
+    </header>
+
+    <div class="flex-1 px-container-padding pb-24 md:pb-12 pt-6 max-w-[1440px] w-full mx-auto">
+      {% if messages %}
+        <div class="space-y-3 mb-6">
+          {% for message in messages %}
+            {% if message.tags == 'success' %}
+              <div class="alert-success rounded-xl px-4 py-3 bg-tertiary/10 text-tertiary border border-tertiary/20">{{ message }}</div>
+            {% elif message.tags == 'error' %}
+              <div class="alert-danger rounded-xl px-4 py-3 bg-error/10 text-error border border-error/20">{{ message }}</div>
+            {% elif message.tags == 'warning' %}
+              <div class="rounded-xl px-4 py-3 bg-secondary/10 text-secondary border border-secondary/20">{{ message }}</div>
+            {% else %}
+              <div class="rounded-xl px-4 py-3 bg-primary/5 text-primary border border-primary/20">{{ message }}</div>
+            {% endif %}
+          {% endfor %}
+        </div>
       {% endif %}
+{% else %}
+  {# Pages publiques (connexion / inscription) : pas de shell, layout centré. #}
+  <div class="min-h-screen flex items-center justify-center px-4 py-12">
+    <div class="w-full max-w-md">
+      {% if messages %}
+        <div class="space-y-3 mb-6">
+          {% for message in messages %}
+            {% if message.tags == 'error' %}
+              <div class="alert-danger rounded-xl px-4 py-3 bg-error/10 text-error border border-error/20">{{ message }}</div>
+            {% else %}
+              <div class="rounded-xl px-4 py-3 bg-primary/5 text-primary border border-primary/20">{{ message }}</div>
+            {% endif %}
+          {% endfor %}
+        </div>
+      {% endif %}
+{% endif %}
+
+      {% block content %}{% endblock %}
+
+{% if user.is_authenticated %}
+    </div>
+  </main>
+
+  <a href="{% url 'assistant' %}"
+     class="fixed bottom-24 md:bottom-8 right-6 md:right-8 z-50 w-14 h-14 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-2xl hover:scale-110 transition-transform"
+     title="Assistant IA">
+    <span class="material-symbols-outlined text-3xl" style="font-variation-settings: 'FILL' 1;">smart_toy</span>
+  </a>
+
+  <nav class="md:hidden fixed bottom-0 left-0 w-full bg-surface-container-highest flex justify-around items-center py-3 border-t border-outline-variant z-50">
+    <a href="{% url 'home' %}" class="flex flex-col items-center gap-1 {% if url_name == 'home' %}text-primary{% else %}text-on-surface-variant{% endif %}">
+      <span class="material-symbols-outlined">dashboard</span><span class="text-[10px] font-label-sm">Bord</span>
+    </a>
+    <a href="{% url 'project_list' %}" class="flex flex-col items-center gap-1 {% if 'project' in url_name %}text-primary{% else %}text-on-surface-variant{% endif %}">
+      <span class="material-symbols-outlined">folder</span><span class="text-[10px] font-label-sm">Projets</span>
+    </a>
+    <a href="{% url 'assistant' %}" class="flex flex-col items-center gap-1 {% if url_name == 'assistant' %}text-primary{% else %}text-on-surface-variant{% endif %}">
+      <span class="material-symbols-outlined">smart_toy</span><span class="text-[10px] font-label-sm">Assistant</span>
+    </a>
+    <a href="{% url 'task_list' %}" class="flex flex-col items-center gap-1 {% if 'task' in url_name %}text-primary{% else %}text-on-surface-variant{% endif %}">
+      <span class="material-symbols-outlined">checklist</span><span class="text-[10px] font-label-sm">Tâches</span>
+    </a>
+  </nav>
+{% else %}
     </div>
   </div>
-</nav>
+{% endif %}
+{% endwith %}
 
-<main class="container py-4">
-  {% if messages %}
-    {% for message in messages %}
-      <div class="alert alert-{{ message.tags|default:'info' }}" role="alert">
-        {{ message }}
-      </div>
-    {% endfor %}
-  {% endif %}
-
-  {% block content %}{% endblock %}
-</main>
-
-<script
-  src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js">
-</script>
+{% block extra_js %}{% endblock %}
 </body>
 </html>

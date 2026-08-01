@@ -24,3 +24,6 @@ media/
 # Config d'outillage locale (chemins absolus, spécifique à la machine)
 .claude/launch.json
 .claude/settings.local.json
+
+# Maquettes de design (référence locale, non versionnée)
+maquette/

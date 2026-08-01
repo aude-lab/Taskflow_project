@@ -1,70 +1,130 @@
 {% extends "base.html" %}
+{% load task_badges %}
 
 {% block title %}Tableau de bord — TaskFlow{% endblock %}
 
 {% block content %}
-  <h1 class="h3 mb-4">Bonjour {{ user.username }}</h1>
+  <!-- En-tête -->
+  <section class="mb-10">
+    <h1 class="font-display-lg text-display-lg text-on-surface mb-2">Bonjour, {{ user.username }}</h1>
+    <p class="text-body-md text-on-surface-variant">
+      Vous avez <span class="text-error font-bold">{{ overdue|length }} tâche{{ overdue|length|pluralize }} en retard</span>
+      et {{ upcoming|length }} échéance{{ upcoming|length|pluralize }} à venir.
+    </p>
+  </section>
 
-  {# --- Deux modes de démarrage (l'assistant IA n'exclut pas le manuel) --- #}
-  <div class="row g-3 mb-4">
-    <div class="col-md-6">
-      <div class="card shadow-sm h-100 border-primary">
-        <div class="card-body d-flex flex-column">
-          <h2 class="h5">Commencer avec l'assistant IA</h2>
-          <p class="text-muted small flex-grow-1">
-            Décris ton projet, l'assistant te pose quelques questions et prépare
-            un plan de tâches prêt à créer.
-          </p>
-          <a class="btn btn-primary" href="{% url 'assistant' %}">
-            Commencer avec l'assistant IA
-          </a>
-        </div>
-      </div>
-    </div>
-    <div class="col-md-6">
-      <div class="card shadow-sm h-100">
-        <div class="card-body d-flex flex-column">
-          <h2 class="h5">Créer un projet manuellement</h2>
-          <p class="text-muted small flex-grow-1">
-            Crée un projet vide et ajoute tes tâches toi-même, comme d'habitude.
-          </p>
-          <a class="btn btn-outline-secondary" href="{% url 'project_create' %}">
-            Créer un projet manuellement
-          </a>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  {# --- Répartition par statut --- #}
-  <div class="row g-3 mb-4">
+  <!-- Compteurs par statut -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-gutter mb-10">
     {% for label, count in by_status_display %}
-      <div class="col-sm-4">
-        <div class="card shadow-sm text-center">
-          <div class="card-body">
-            <div class="display-6">{{ count }}</div>
-            <div class="text-muted">{{ label }}</div>
-          </div>
+      <div class="status-pill bg-surface-container-lowest p-6 rounded-xl shadow-level-1 border-l-4 {% if forloop.counter0 == 0 %}border-outline{% elif forloop.counter0 == 1 %}border-secondary{% else %}border-tertiary{% endif %} flex items-center justify-between">
+        <div>
+          <p class="text-label-sm text-on-surface-variant uppercase tracking-wider mb-1">{{ label }}</p>
+          <p class="text-headline-lg font-bold">{{ count }}</p>
         </div>
+        <span class="material-symbols-outlined text-4xl opacity-20 {% if forloop.counter0 == 0 %}text-outline{% elif forloop.counter0 == 1 %}text-secondary{% else %}text-tertiary{% endif %}">
+          {% if forloop.counter0 == 0 %}checklist{% elif forloop.counter0 == 1 %}sync{% else %}check_circle{% endif %}
+        </span>
       </div>
     {% endfor %}
   </div>
 
-  {# --- En retard --- #}
-  <div class="card shadow-sm mb-4 border-danger">
-    <div class="card-header bg-danger-subtle d-flex justify-content-between">
-      <span class="fw-semibold">En retard</span>
-      <span class="badge text-bg-danger">{{ overdue|length }}</span>
+  <!-- Cartes d'action -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-gutter mb-12">
+    <div class="ai-card bg-surface-container-lowest p-8 rounded-xl shadow-xl flex flex-col group">
+      <div class="p-3 bg-secondary-container rounded-xl w-fit mb-6">
+        <span class="material-symbols-outlined text-on-secondary text-3xl" style="font-variation-settings: 'FILL' 1;">smart_toy</span>
+      </div>
+      <h2 class="font-headline-lg text-headline-lg mb-3">Commencer avec l'assistant IA</h2>
+      <p class="text-body-md text-on-surface-variant mb-8 max-w-sm">
+        Décrivez votre projet en langage naturel : l'assistant vous propose un plan de tâches prêt à créer.
+      </p>
+      <a href="{% url 'assistant' %}" class="mt-auto self-start bg-primary text-on-primary px-6 py-3 rounded-lg font-bold flex items-center gap-2 group-hover:gap-4 transition-all">
+        Lancer l'assistant <span class="material-symbols-outlined">arrow_forward</span>
+      </a>
+      <div class="absolute -right-12 -bottom-12 w-48 h-48 bg-primary/5 rounded-full blur-3xl group-hover:bg-primary/10 transition-colors"></div>
     </div>
-    {% include "core/_task_table.html" with tasks=overdue empty_label="Aucune tâche en retard." %}
+
+    <div class="bg-surface-container-lowest border border-outline-variant p-8 rounded-xl flex flex-col hover:border-primary transition-colors shadow-sm group">
+      <div class="p-3 bg-surface-container rounded-xl w-fit mb-6">
+        <span class="material-symbols-outlined text-on-surface-variant text-3xl">add_box</span>
+      </div>
+      <h2 class="font-headline-lg text-headline-lg mb-3">Créer un projet manuellement</h2>
+      <p class="text-body-md text-on-surface-variant mb-8 max-w-sm">
+        Créez un projet vide et ajoutez vos tâches vous-même, comme d'habitude.
+      </p>
+      <a href="{% url 'project_create' %}" class="mt-auto self-start text-primary font-bold flex items-center gap-2 group-hover:translate-x-1 transition-transform">
+        Créer un projet <span class="material-symbols-outlined">chevron_right</span>
+      </a>
+    </div>
   </div>
 
-  {# --- À venir (14 jours) --- #}
-  <div class="card shadow-sm mb-4">
-    <div class="card-header d-flex justify-content-between">
-      <span class="fw-semibold">À venir (14 jours)</span>
-      <span class="badge text-bg-secondary">{{ upcoming|length }}</span>
-    </div>
-    {% include "core/_task_table.html" with tasks=upcoming empty_label="Aucune tâche à venir." %}
+  <!-- En retard / À venir -->
+  <div class="grid grid-cols-1 xl:grid-cols-3 gap-gutter">
+    <!-- En retard -->
+    <section class="xl:col-span-1">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-headline-lg-mobile text-headline-lg-mobile flex items-center gap-2">
+          <span class="material-symbols-outlined text-error" style="font-variation-settings: 'FILL' 1;">warning</span>
+          En retard
+        </h3>
+        <span class="text-label-sm text-error font-bold">{{ overdue|length }}</span>
+      </div>
+      <div class="flex flex-col gap-3">
+        {% for task in overdue %}
+          <div class="bg-surface-container-lowest p-4 rounded-xl border-l-4 border-error shadow-sm flex flex-col gap-2">
+            <div class="flex justify-between items-start gap-2">
+              <p class="font-bold text-on-surface">{{ task.title }}</p>
+              <span class="text-label-sm text-error bg-error/10 px-2 py-0.5 rounded whitespace-nowrap">{{ task.get_priority_display }}</span>
+            </div>
+            <div class="flex items-center gap-1 text-on-surface-variant">
+              <span class="material-symbols-outlined text-sm">schedule</span>
+              <span class="text-label-sm">Échéance {{ task.due_date|date:"d/m/Y" }}</span>
+            </div>
+          </div>
+        {% empty %}
+          <div class="bg-surface-container-lowest p-6 rounded-xl text-center text-on-surface-variant shadow-sm">
+            Aucune tâche en retard.
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <!-- À venir -->
+    <section class="xl:col-span-2">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="font-headline-lg-mobile text-headline-lg-mobile">À venir (14 jours)</h3>
+        <span class="text-label-sm text-on-surface-variant font-bold">{{ upcoming|length }}</span>
+      </div>
+      <div class="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden border border-outline-variant">
+        {% if upcoming %}
+          <div class="overflow-x-auto">
+            <table class="w-full text-left">
+              <thead class="bg-surface-container-low border-b border-outline-variant">
+                <tr>
+                  <th class="px-6 py-4 font-label-sm text-on-surface-variant uppercase tracking-wider">Échéance</th>
+                  <th class="px-6 py-4 font-label-sm text-on-surface-variant uppercase tracking-wider">Tâche</th>
+                  <th class="px-6 py-4 font-label-sm text-on-surface-variant uppercase tracking-wider">Projet</th>
+                  <th class="px-6 py-4 font-label-sm text-on-surface-variant uppercase tracking-wider">Statut</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-surface-container">
+                {% for task in upcoming %}
+                  <tr class="hover:bg-surface-container-low/50 transition-colors">
+                    <td class="px-6 py-4 font-label-sm text-on-surface font-bold whitespace-nowrap">{{ task.due_date|date:"d M"|upper }}</td>
+                    <td class="px-6 py-4 text-body-md font-bold">{{ task.title }}</td>
+                    <td class="px-6 py-4">
+                      <span class="bg-primary/5 text-primary px-3 py-1 rounded-full text-label-sm font-bold">{{ task.project.name }}</span>
+                    </td>
+                    <td class="px-6 py-4">{% status_badge task.status %}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="px-6 py-8 text-center text-on-surface-variant">Aucune tâche à venir.</div>
+        {% endif %}
+      </div>
+    </section>
   </div>
 {% endblock %}
