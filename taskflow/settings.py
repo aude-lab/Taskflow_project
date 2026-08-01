@@ -80,6 +80,10 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # WhiteNoise sert les fichiers statiques directement depuis l'app (juste
+    # après SecurityMiddleware, comme recommandé). Indispensable en prod
+    # serverless (Vercel) où aucun serveur web ne sert /static.
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -184,9 +188,11 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
-# `collectstatic` (lancé au build Vercel par build_files.sh) rassemble les
-# fichiers ici ; Vercel sert ce dossier via la route /static/ (cf. vercel.json).
 STATIC_ROOT = BASE_DIR / 'staticfiles_build' / 'static'
+# WhiteNoise sert les statiques via les finders (répertoires static/ des apps),
+# sans nécessiter `collectstatic` au build — ce qui simplifie le déploiement
+# serverless. Les fichiers de l'admin et des apps sont trouvés à l'exécution.
+WHITENOISE_USE_FINDERS = True
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/6.0/ref/settings/#default-auto-field

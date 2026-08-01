@@ -6,3 +6,4 @@ django-filter==26.1
 openai==2.52.0
 psycopg[binary]==3.3.4
 python-dotenv==1.2.2
+whitenoise==6.12.0
