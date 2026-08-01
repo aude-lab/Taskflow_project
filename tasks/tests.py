@@ -1080,9 +1080,9 @@ class PolishTestCase(TestCase):
             status=Task.Status.DONE, priority=Task.Priority.HIGH,
         )
         response = self.client.get(self.list_url)
-        # Terminé → vert, Haute → rouge, libellés accentués conservés.
-        self.assertContains(response, "text-bg-success")
-        self.assertContains(response, "text-bg-danger")
+        # Terminé → vert, Haute → rouge (pastilles Tailwind), libellés conservés.
+        self.assertContains(response, "bg-tertiary-container")
+        self.assertContains(response, "bg-error-container")
         self.assertContains(response, "Terminé")
         self.assertContains(response, "Haute")
 
@@ -1092,7 +1092,7 @@ class PolishTestCase(TestCase):
             due_date=self.today - timedelta(days=2),
         )
         response = self.client.get(self.list_url)
-        self.assertContains(response, "text-danger fw-semibold")
+        self.assertContains(response, "text-error font-semibold")
 
     def test_future_task_date_not_highlighted(self):
         Task.objects.create(
@@ -1100,21 +1100,17 @@ class PolishTestCase(TestCase):
             due_date=self.today + timedelta(days=5),
         )
         response = self.client.get(self.list_url)
-        self.assertNotContains(response, "text-danger fw-semibold")
+        self.assertNotContains(response, "text-error font-semibold")
 
     # --- Navigation active ---
 
     def test_nav_highlights_current_section(self):
-        # assertInHTML normalise les espaces (l'attribut class et href sont sur
-        # des lignes différentes dans le template).
+        # La sidebar marque le lien actif par un attribut `data-active` (une
+        # seule barre desktop → un seul marqueur), robuste au style.
         on_tasks = self.client.get(self.list_url).content.decode()
-        self.assertInHTML(
-            '<a class="nav-link active" href="/taches/">Tâches</a>', on_tasks
-        )
+        self.assertIn('data-active="tasks"', on_tasks)
         on_projects = self.client.get(reverse("project_list")).content.decode()
-        self.assertInHTML(
-            '<a class="nav-link active" href="/projets/">Projets</a>', on_projects
-        )
+        self.assertIn('data-active="projects"', on_projects)
 
     def test_nav_task_create_is_not_double_active(self):
         # /projets/<pk>/taches/nouvelle/ contient « projets » ET « taches » dans
@@ -1122,18 +1118,18 @@ class PolishTestCase(TestCase):
         url = reverse("task_create", kwargs={"project_pk": self.project.pk})
         html = self.client.get(url).content.decode()
         # Un seul lien de nav actif, et c'est « Tâches ».
-        self.assertEqual(html.count("nav-link active"), 1)
-        self.assertInHTML(
-            '<a class="nav-link active" href="/taches/">Tâches</a>', html
-        )
+        self.assertEqual(html.count("data-active="), 1)
+        self.assertIn('data-active="tasks"', html)
 
     def test_badge_does_not_crash_on_unknown_value(self):
         from tasks.templatetags.task_badges import priority_badge, status_badge
 
-        # Une valeur hors choix ne doit pas lever (helper d'affichage).
-        self.assertEqual(status_badge("inconnu")["css"], "secondary")
+        # Une valeur hors choix ne doit pas lever (helper d'affichage) : elle
+        # retombe sur la pastille par défaut.
+        default = "bg-surface-container-high text-on-surface-variant"
+        self.assertEqual(status_badge("inconnu")["css"], default)
         self.assertEqual(status_badge("inconnu")["label"], "inconnu")
-        self.assertEqual(priority_badge("???")["css"], "secondary")
+        self.assertEqual(priority_badge("???")["css"], default)
 
     # --- État vide soigné ---
 
@@ -1141,8 +1137,8 @@ class PolishTestCase(TestCase):
         response = self.client.get(self.list_url)
         self.assertContains(response, "Vous n'avez pas encore de tâche.")
         # Encart centré, et pas d'en-tête de tableau vide.
-        self.assertContains(response, "text-center text-muted")
-        self.assertNotContains(response, "<th>Titre</th>")
+        self.assertContains(response, "text-center")
+        self.assertNotContains(response, "Titre</th>")
 
 
 class AIAssistantTestCase(APITestCase):

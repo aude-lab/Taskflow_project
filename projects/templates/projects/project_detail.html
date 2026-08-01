@@ -4,132 +4,149 @@
 {% block title %}{{ project.name }} — TaskFlow{% endblock %}
 
 {% block content %}
-  <div class="d-flex justify-content-between align-items-start mb-3">
+  <!-- En-tête -->
+  <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
     <div>
-      <h1 class="h3 mb-1">{{ project.name }}</h1>
-      <p class="text-muted small mb-0">
-        Créé le {{ project.created_at|date:"d/m/Y" }} —
-        modifié le {{ project.updated_at|date:"d/m/Y" }}
+      <a href="{% url 'project_list' %}" class="flex items-center gap-1 text-on-surface-variant mb-1 hover:text-primary transition-colors">
+        <span class="material-symbols-outlined text-sm">arrow_back</span>
+        <span class="font-label-sm text-label-sm uppercase tracking-widest">Retour aux projets</span>
+      </a>
+      <h1 class="font-headline-lg text-headline-lg text-on-surface">{{ project.name }}</h1>
+      <p class="text-on-surface-variant font-body-md text-body-md">
+        Créé le {{ project.created_at|date:"d/m/Y" }} • modifié le {{ project.updated_at|date:"d/m/Y" }}
       </p>
     </div>
-    <div>
-      <a class="btn btn-sm btn-outline-secondary"
-         href="{% url 'project_update' project.pk %}">Modifier</a>
-      <a class="btn btn-sm btn-outline-danger"
-         href="{% url 'project_delete' project.pk %}">Supprimer</a>
+    <div class="flex gap-3">
+      <a href="{% url 'project_update' project.pk %}"
+         class="px-4 py-2 border border-outline-variant text-on-surface rounded-lg flex items-center gap-2 hover:bg-surface-container-low transition-colors">
+        <span class="material-symbols-outlined">edit</span> Modifier
+      </a>
+      <a href="{% url 'project_delete' project.pk %}"
+         class="px-4 py-2 text-error border border-error/20 bg-error/5 rounded-lg flex items-center gap-2 hover:bg-error/10 transition-colors">
+        <span class="material-symbols-outlined">delete</span> Supprimer
+      </a>
     </div>
+  </header>
+
+  <!-- Description -->
+  <div class="bg-surface-container-lowest p-6 rounded-xl shadow-sm mb-6">
+    {% if project.description %}
+      <p class="text-body-md text-on-surface whitespace-pre-line">{{ project.description }}</p>
+    {% else %}
+      <p class="text-on-surface-variant">Aucune description.</p>
+    {% endif %}
   </div>
 
-  <div class="card shadow-sm mb-4">
-    <div class="card-body">
-      {% if project.description %}
-        <p class="mb-0">{{ project.description|linebreaksbr }}</p>
-      {% else %}
-        <p class="text-muted mb-0">Aucune description.</p>
-      {% endif %}
-    </div>
-  </div>
-
-  {# --- Assistant IA : génération de tâches en langage naturel --- #}
-  <div class="card shadow-sm mb-4" id="ai-assistant"
-       data-project-id="{{ project.pk }}">
-    <div class="card-body">
-      <div class="d-flex justify-content-between align-items-center">
-        <h2 class="h6 mb-0">Assistant IA</h2>
-        <div class="d-flex gap-2">
-          <a class="btn btn-sm btn-outline-primary"
-             href="{% url 'assistant' %}?project_id={{ project.pk }}">
-            Réajuster avec l'IA
-          </a>
-          <button type="button" class="btn btn-sm btn-outline-primary"
-                  id="ai-toggle">Générer des tâches avec l'IA</button>
+  <!-- Assistant IA -->
+  <section id="ai-assistant" data-project-id="{{ project.pk }}"
+           class="ai-card bg-surface-container-lowest p-6 rounded-xl shadow-sm mb-8">
+    <div class="flex flex-wrap justify-between items-center gap-3 mb-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 bg-secondary-container rounded-full flex items-center justify-center">
+          <span class="material-symbols-outlined text-on-secondary" style="font-variation-settings: 'FILL' 1;">smart_toy</span>
         </div>
+        <h2 class="font-headline-lg-mobile text-headline-lg-mobile font-bold">Assistant IA</h2>
       </div>
-
-      <div id="ai-panel" class="d-none mt-3">
-        <label for="ai-text" class="form-label small text-muted">
-          Décris tes tâches en langage naturel, l'IA te proposera une liste à
-          valider avant création.
-        </label>
-        <textarea id="ai-text" class="form-control" rows="3"
-                  placeholder="Décris tes tâches en langage naturel..."></textarea>
-        <div class="mt-2">
-          <button type="button" class="btn btn-sm btn-primary" id="ai-analyze">
-            Analyser
-          </button>
-        </div>
-
-        {# Zone de message (erreurs réseau / IA), masquée par défaut. #}
-        <div id="ai-message" class="alert d-none mt-3 mb-0" role="alert"></div>
-
-        {# Aperçu des tâches proposées, rempli par le JS. #}
-        <div id="ai-preview" class="d-none mt-3">
-          <p class="small text-muted mb-2">
-            Sélectionne les tâches à créer :
-          </p>
-          <div id="ai-preview-list"></div>
-          <button type="button" class="btn btn-sm btn-success mt-2"
-                  id="ai-create">Créer les tâches sélectionnées</button>
-        </div>
+      <div class="flex gap-2">
+        <a href="{% url 'assistant' %}?project_id={{ project.pk }}"
+           class="px-4 py-2 rounded-lg border border-outline-variant text-on-surface-variant hover:bg-surface-container transition-colors flex items-center gap-2">
+          <span class="material-symbols-outlined text-sm">forum</span> Réajuster avec l'IA
+        </a>
+        <button type="button" id="ai-toggle"
+                class="px-4 py-2 rounded-lg bg-primary text-on-primary font-medium hover:opacity-90 transition-all flex items-center gap-2">
+          <span class="material-symbols-outlined text-sm">auto_awesome</span> Générer des tâches
+        </button>
       </div>
     </div>
+
+    <div id="ai-panel" class="hidden">
+      <label for="ai-text" class="block font-label-sm text-label-sm text-on-surface-variant mb-2">
+        Décris tes tâches en langage naturel, l'IA te proposera une liste à valider avant création.
+      </label>
+      <textarea id="ai-text" rows="3"
+                class="w-full bg-surface-container-low border border-outline-variant/50 focus:ring-2 focus:ring-primary rounded-xl p-4 placeholder:text-outline-variant"
+                placeholder="Décris tes tâches en langage naturel..."></textarea>
+      <div class="mt-3">
+        <button type="button" id="ai-analyze"
+                class="bg-primary text-on-primary px-5 py-2.5 rounded-lg font-medium hover:opacity-90 transition-all">
+          Analyser
+        </button>
+      </div>
+
+      <div id="ai-message" class="hidden mt-4 rounded-xl px-4 py-3" role="alert"></div>
+
+      <div id="ai-preview" class="hidden mt-4 bg-surface-container-low/50 rounded-xl p-4 border border-outline-variant/30">
+        <p class="font-label-sm text-label-sm text-primary mb-3 flex items-center gap-2">
+          <span class="material-symbols-outlined text-sm">list_alt</span> TÂCHES PROPOSÉES PAR L'IA
+        </p>
+        <div id="ai-preview-list" class="space-y-2"></div>
+        <button type="button" id="ai-create"
+                class="mt-4 bg-tertiary text-on-tertiary px-5 py-2.5 rounded-lg font-bold hover:opacity-90 transition-all">
+          Créer les tâches sélectionnées
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Tâches -->
+  <div class="flex justify-between items-center mb-3">
+    <h2 class="font-headline-lg-mobile text-headline-lg-mobile font-bold">Tâches</h2>
+    <a href="{% url 'task_create' project.pk %}"
+       class="bg-primary text-on-primary px-4 py-2 rounded-lg font-medium flex items-center gap-2 hover:opacity-90 transition-all">
+      <span class="material-symbols-outlined text-sm">add</span> Nouvelle tâche
+    </a>
   </div>
 
-  <div class="d-flex justify-content-between align-items-center mb-2">
-    <h2 class="h5 mb-0">Tâches</h2>
-    <a class="btn btn-sm btn-primary"
-       href="{% url 'task_create' project.pk %}">Nouvelle tâche</a>
-  </div>
-
-  {# {% empty %} évite d'évaluer project.tasks.all deux fois (if + for). #}
-  <div class="card shadow-sm mb-4">
-    <table class="table table-hover mb-0 align-middle">
-      <thead>
-        <tr>
-          <th>Titre</th>
-          <th>Statut</th>
-          <th>Priorité</th>
-          <th>Échéance</th>
-          <th class="text-end">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for task in project.tasks.all %}
-          <tr>
-            <td>{{ task.title }}</td>
-            <td>{% status_badge task.status %}</td>
-            <td>{% priority_badge task.priority %}</td>
-            <td class="{% if task|is_overdue %}text-danger fw-semibold{% endif %}">
-              {{ task.due_date|date:"d/m/Y"|default:"—" }}
-            </td>
-            <td class="text-end">
-              <a class="btn btn-sm btn-outline-secondary"
-                 href="{% url 'task_update' task.pk %}">Modifier</a>
-              <a class="btn btn-sm btn-outline-danger"
-                 href="{% url 'task_delete' task.pk %}">Supprimer</a>
-            </td>
+  <div class="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden border border-surface-container-high">
+    <div class="overflow-x-auto">
+      <table class="w-full text-left">
+        <thead>
+          <tr class="bg-surface-container-low border-b border-surface-container-high">
+            <th class="px-6 py-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Titre</th>
+            <th class="px-6 py-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Statut</th>
+            <th class="px-6 py-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Priorité</th>
+            <th class="px-6 py-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Échéance</th>
+            <th class="px-6 py-4 font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider text-right">Actions</th>
           </tr>
-        {% empty %}
-          <tr>
-            <td colspan="5" class="text-muted">Ce projet n'a pas encore de tâche.</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+        </thead>
+        <tbody class="divide-y divide-surface-container-high">
+          {% for task in project.tasks.all %}
+            <tr class="hover:bg-surface-container-lowest transition-colors">
+              <td class="px-6 py-4 font-body-md font-medium text-on-surface">{{ task.title }}</td>
+              <td class="px-6 py-4">{% status_badge task.status %}</td>
+              <td class="px-6 py-4">{% priority_badge task.priority %}</td>
+              <td class="px-6 py-4 {% if task|is_overdue %}text-error font-semibold{% else %}text-on-surface{% endif %}">
+                {{ task.due_date|date:"d/m/Y"|default:"—" }}
+              </td>
+              <td class="px-6 py-4">
+                <div class="flex gap-1 justify-end">
+                  <a href="{% url 'task_update' task.pk %}" title="Modifier"
+                     class="p-2 rounded-lg hover:bg-surface-container text-on-surface-variant transition-colors">
+                    <span class="material-symbols-outlined text-[20px]">edit</span>
+                  </a>
+                  <a href="{% url 'task_delete' task.pk %}" title="Supprimer"
+                     class="p-2 rounded-lg hover:bg-error-container text-error transition-colors">
+                    <span class="material-symbols-outlined text-[20px]">delete</span>
+                  </a>
+                </div>
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="5" class="px-6 py-8 text-center text-on-surface-variant">Ce projet n'a pas encore de tâche.</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
-
-  <a href="{% url 'project_list' %}">&larr; Retour aux projets</a>
 
   <script>
   (function () {
     const root = document.getElementById("ai-assistant");
     const projectId = parseInt(root.dataset.projectId, 10);
-    // Jeton CSRF : ces endpoints acceptent la session, qui impose le CSRF.
     const csrfToken = "{{ csrf_token }}";
-
-    const PRIORITY_LABELS = {
-      basse: "Basse", moyenne: "Moyenne", haute: "Haute",
-    };
+    const PRIORITY_LABELS = { basse: "Basse", moyenne: "Moyenne", haute: "Haute" };
 
     const toggle = document.getElementById("ai-toggle");
     const panel = document.getElementById("ai-panel");
@@ -140,17 +157,18 @@
     const previewList = document.getElementById("ai-preview-list");
     const createBtn = document.getElementById("ai-create");
 
-    // Tâches proposées par la dernière analyse (source des cases cochées).
     let proposed = [];
 
+    const MSG_STYLES = {
+      danger: "bg-error/10 text-error border border-error/20",
+      warning: "bg-secondary/10 text-secondary border border-secondary/20",
+      info: "bg-primary/5 text-primary border border-primary/20",
+    };
     function showMessage(msgText, kind) {
       message.textContent = msgText;
-      message.className = "alert alert-" + kind + " mt-3 mb-0";
+      message.className = "mt-4 rounded-xl px-4 py-3 " + (MSG_STYLES[kind] || MSG_STYLES.info);
     }
-
-    function hideMessage() {
-      message.className = "alert d-none mt-3 mb-0";
-    }
+    function hideMessage() { message.className = "hidden mt-4 rounded-xl px-4 py-3"; }
 
     function escapeHtml(value) {
       const div = document.createElement("div");
@@ -158,46 +176,31 @@
       return div.innerHTML;
     }
 
-    toggle.addEventListener("click", function () {
-      panel.classList.toggle("d-none");
-    });
+    toggle.addEventListener("click", function () { panel.classList.toggle("hidden"); });
 
     async function analyze() {
       const value = text.value.trim();
-      if (!value) {
-        showMessage("Décris d'abord tes tâches avant d'analyser.", "warning");
-        return;
-      }
+      if (!value) { showMessage("Décris d'abord tes tâches avant d'analyser.", "warning"); return; }
       hideMessage();
-      preview.classList.add("d-none");
+      preview.classList.add("hidden");
       analyzeBtn.disabled = true;
       analyzeBtn.textContent = "Analyse en cours…";
       try {
         const response = await fetch("/api/tasks/generate/", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": csrfToken,
-          },
+          headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken },
           body: JSON.stringify({ text: value, project_id: projectId }),
         });
         if (!response.ok) {
           const data = await response.json().catch(function () { return {}; });
-          showMessage(
-            data.detail || "L'analyse a échoué. Réessaie dans un instant.",
-            "danger"
-          );
+          showMessage(data.detail || "L'analyse a échoué. Réessaie dans un instant.", "danger");
           return;
         }
         const data = await response.json();
         proposed = data.tasks || [];
         renderPreview();
       } catch (err) {
-        // Erreur réseau (serveur injoignable, hors ligne…).
-        showMessage(
-          "Impossible de contacter le serveur. Vérifie ta connexion.",
-          "danger"
-        );
+        showMessage("Impossible de contacter le serveur. Vérifie ta connexion.", "danger");
       } finally {
         analyzeBtn.disabled = false;
         analyzeBtn.textContent = "Analyser";
@@ -207,66 +210,48 @@
     function renderPreview() {
       if (proposed.length === 0) {
         showMessage("L'IA n'a proposé aucune tâche. Reformule ta demande.", "info");
-        preview.classList.add("d-none");
+        preview.classList.add("hidden");
         return;
       }
       hideMessage();
       previewList.innerHTML = proposed.map(function (task, index) {
-        const due = task.due_date
-          ? escapeHtml(task.due_date)
-          : "<span class=\"text-muted\">sans échéance</span>";
+        const due = task.due_date ? escapeHtml(task.due_date) : "<span class=\"text-on-surface-variant\">sans échéance</span>";
         const priority = PRIORITY_LABELS[task.priority] || escapeHtml(task.priority);
         return (
-          '<div class="form-check">' +
-            '<input class="form-check-input ai-check" type="checkbox" ' +
-              'value="' + index + '" id="ai-check-' + index + '" checked>' +
-            '<label class="form-check-label" for="ai-check-' + index + '">' +
-              "<strong>" + escapeHtml(task.title) + "</strong> " +
-              '<span class="badge bg-secondary">' + priority + "</span> " +
-              '<span class="small text-muted">' + due + "</span>" +
-            "</label>" +
-          "</div>"
+          '<label class="flex items-start gap-3 p-2 rounded-lg hover:bg-surface-container-low cursor-pointer">' +
+            '<input class="ai-check mt-1 rounded border-outline-variant text-primary focus:ring-primary" type="checkbox" value="' + index + '" checked>' +
+            '<span class="flex-1">' +
+              '<span class="font-body-md text-on-surface font-medium">' + escapeHtml(task.title) + '</span> ' +
+              '<span class="inline-block px-2 py-0.5 rounded-full text-xs bg-surface-container-high text-on-surface-variant">' + priority + '</span> ' +
+              '<span class="text-xs text-on-surface-variant">' + due + '</span>' +
+            '</span>' +
+          '</label>'
         );
       }).join("");
-      preview.classList.remove("d-none");
+      preview.classList.remove("hidden");
     }
 
     async function createSelected() {
-      const checked = Array.from(
-        previewList.querySelectorAll(".ai-check:checked")
-      ).map(function (input) { return proposed[parseInt(input.value, 10)]; });
-
-      if (checked.length === 0) {
-        showMessage("Sélectionne au moins une tâche à créer.", "warning");
-        return;
-      }
+      const checked = Array.from(previewList.querySelectorAll(".ai-check:checked"))
+        .map(function (input) { return proposed[parseInt(input.value, 10)]; });
+      if (checked.length === 0) { showMessage("Sélectionne au moins une tâche à créer.", "warning"); return; }
       hideMessage();
       createBtn.disabled = true;
       createBtn.textContent = "Création en cours…";
       try {
         const response = await fetch("/api/tasks/confirm/", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": csrfToken,
-          },
+          headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken },
           body: JSON.stringify({ project_id: projectId, tasks: checked }),
         });
         if (!response.ok) {
           const data = await response.json().catch(function () { return {}; });
-          showMessage(
-            data.detail || "La création a échoué. Vérifie les tâches proposées.",
-            "danger"
-          );
+          showMessage(data.detail || "La création a échoué. Vérifie les tâches proposées.", "danger");
           return;
         }
-        // Succès : recharger pour voir les nouvelles tâches dans le tableau.
         window.location.reload();
       } catch (err) {
-        showMessage(
-          "Impossible de contacter le serveur. Vérifie ta connexion.",
-          "danger"
-        );
+        showMessage("Impossible de contacter le serveur. Vérifie ta connexion.", "danger");
       } finally {
         createBtn.disabled = false;
         createBtn.textContent = "Créer les tâches sélectionnées";

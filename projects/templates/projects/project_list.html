@@ -3,45 +3,64 @@
 {% block title %}Mes projets — TaskFlow{% endblock %}
 
 {% block content %}
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h1 class="h3 mb-0">Mes projets</h1>
-    <a class="btn btn-primary" href="{% url 'project_create' %}">Nouveau projet</a>
-  </div>
+  <section class="mb-stack-lg flex flex-col md:flex-row md:items-end justify-between gap-4">
+    <div>
+      <h1 class="font-display-lg text-display-lg text-primary tracking-tight">Mes projets</h1>
+      <p class="text-on-surface-variant mt-2">Visualisez et gérez vos projets en cours.</p>
+    </div>
+    <a href="{% url 'project_create' %}"
+       class="flex items-center gap-2 bg-primary text-on-primary px-6 py-3 rounded-full font-bold shadow-md hover:shadow-lg transition-shadow active:scale-95 w-fit">
+      <span class="material-symbols-outlined">add_circle</span>
+      Nouveau projet
+    </a>
+  </section>
 
-  {% if projects %}
-    <div class="card shadow-sm">
-      <table class="table table-hover mb-0 align-middle">
-        <thead>
-          <tr>
-            <th>Nom</th>
-            <th>Tâches</th>
-            <th>Créé le</th>
-            <th class="text-end">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for project in projects %}
-            <tr>
-              <td>
-                <a href="{% url 'project_detail' project.pk %}">{{ project.name }}</a>
-              </td>
-              <td>{{ project.task_count }}</td>
-              <td>{{ project.created_at|date:"d/m/Y" }}</td>
-              <td class="text-end">
-                <a class="btn btn-sm btn-outline-secondary"
-                   href="{% url 'project_update' project.pk %}">Modifier</a>
-                <a class="btn btn-sm btn-outline-danger"
-                   href="{% url 'project_delete' project.pk %}">Supprimer</a>
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  {% else %}
-    <div class="alert alert-info">
-      Vous n'avez pas encore de projet.
-      <a href="{% url 'project_create' %}">Créez le premier</a>.
-    </div>
-  {% endif %}
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-gutter">
+    {% for project in projects %}
+      <div class="bg-surface-container-lowest rounded-xl p-6 flex flex-col shadow-level-1 hover-lift group border-l-4 border-l-transparent hover:border-l-primary transition-colors">
+        <div class="flex justify-between items-start mb-4">
+          <div class="p-2 bg-primary/10 rounded-lg text-primary">
+            <span class="material-symbols-outlined">folder</span>
+          </div>
+          <span class="font-label-sm text-label-sm bg-primary/5 text-primary px-3 py-1 rounded-full">
+            {{ project.task_count }} tâche{{ project.task_count|pluralize }}
+          </span>
+        </div>
+        <h2 class="font-headline-lg text-headline-lg-mobile text-on-surface mb-2">
+          <a href="{% url 'project_detail' project.pk %}" class="hover:text-primary transition-colors">{{ project.name }}</a>
+        </h2>
+        <p class="text-on-surface-variant text-body-md mb-6 line-clamp-2">
+          {{ project.description|default:"Aucune description." }}
+        </p>
+        <div class="mt-auto pt-4 border-t border-surface-variant flex items-center justify-between">
+          <span class="text-label-sm text-on-surface-variant">Créé le {{ project.created_at|date:"d/m/Y" }}</span>
+          <div class="flex gap-1">
+            <a href="{% url 'project_update' project.pk %}" title="Modifier"
+               class="p-2 rounded-lg hover:bg-surface-container-high text-on-surface-variant transition-colors">
+              <span class="material-symbols-outlined">edit</span>
+            </a>
+            <a href="{% url 'project_delete' project.pk %}" title="Supprimer"
+               class="p-2 rounded-lg hover:bg-error-container text-error transition-colors">
+              <span class="material-symbols-outlined">delete</span>
+            </a>
+            <a href="{% url 'project_detail' project.pk %}"
+               class="flex items-center gap-1 bg-surface-container-highest text-primary font-bold px-4 py-2 rounded-lg hover:bg-primary hover:text-on-primary transition-all">
+              Ouvrir <span class="material-symbols-outlined text-[20px]">arrow_forward</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    {% empty %}
+      <a href="{% url 'project_create' %}"
+         class="col-span-full border-2 border-dashed border-outline-variant rounded-xl p-10 flex flex-col items-center justify-center gap-4 text-on-surface-variant hover:bg-surface-container-low hover:border-primary/50 transition-all group">
+        <div class="w-12 h-12 rounded-full bg-surface-container flex items-center justify-center group-hover:bg-primary/10 group-hover:text-primary">
+          <span class="material-symbols-outlined text-3xl">add</span>
+        </div>
+        <div class="text-center">
+          <p class="font-bold">Vous n'avez pas encore de projet.</p>
+          <p class="text-sm opacity-60">Créez le premier</p>
+        </div>
+      </a>
+    {% endfor %}
+  </div>
 {% endblock %}

@@ -3,27 +3,18 @@
 {% block title %}Supprimer {{ task.title }} — TaskFlow{% endblock %}
 
 {% block content %}
-  <div class="row justify-content-center">
-    <div class="col-md-7">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <h1 class="h4 mb-1">Supprimer « {{ task.title }} » ?</h1>
-          <p class="text-muted small mb-3">Projet : {{ task.project.name }}</p>
+  <div class="max-w-2xl mx-auto">
+    <div class="bg-surface-container-lowest rounded-xl shadow-sm p-6 md:p-8">
+      <h1 class="font-headline-lg-mobile text-headline-lg-mobile font-bold mb-1">Supprimer « {{ task.title }} » ?</h1>
+      <p class="text-on-surface-variant text-label-sm mb-6">Projet : {{ task.project.name }}</p>
 
-          <p>Cette action est irréversible.</p>
+      <p class="mb-6">Cette action est irréversible.</p>
 
-          <form method="post">
-            {% csrf_token %}
-            <div class="d-flex gap-2">
-              <button type="submit" class="btn btn-danger">
-                Supprimer définitivement
-              </button>
-              <a class="btn btn-outline-secondary"
-                 href="{% url 'project_detail' task.project.pk %}">Annuler</a>
-            </div>
-          </form>
-        </div>
-      </div>
+      <form method="post" class="flex gap-3">
+        {% csrf_token %}
+        <button type="submit" class="bg-error text-on-error px-6 py-3 rounded-lg font-bold hover:opacity-90 transition-all">Supprimer définitivement</button>
+        <a href="{% url 'project_detail' task.project.pk %}" class="px-6 py-3 rounded-lg border border-outline-variant text-on-surface-variant hover:bg-surface-container transition-colors">Annuler</a>
+      </form>
     </div>
   </div>
 {% endblock %}

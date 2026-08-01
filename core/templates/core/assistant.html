@@ -3,52 +3,61 @@
 {% block title %}Assistant IA — TaskFlow{% endblock %}
 
 {% block content %}
-  <div id="assistant"
-       data-project-id="{% if project %}{{ project.pk }}{% endif %}">
+  <div id="assistant" data-project-id="{% if project %}{{ project.pk }}{% endif %}"
+       class="flex flex-col" style="min-height: calc(100vh - 8rem);">
 
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h1 class="h4 mb-0">Assistant de planification</h1>
+    <div class="flex justify-between items-center mb-4">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 bg-secondary-container rounded-full flex items-center justify-center">
+          <span class="material-symbols-outlined text-on-secondary" style="font-variation-settings: 'FILL' 1;">smart_toy</span>
+        </div>
+        <div>
+          <h1 class="font-headline-lg-mobile text-headline-lg-mobile font-bold">Assistant de planification</h1>
+          {% if project %}
+            <p class="text-on-surface-variant text-label-sm">Réajustement de « {{ project.name }} » — l'assistant tient compte des tâches existantes.</p>
+          {% endif %}
+        </div>
+      </div>
       {% if project %}
-        <a class="btn btn-sm btn-outline-secondary"
-           href="{% url 'project_detail' project.pk %}">← {{ project.name }}</a>
+        <a href="{% url 'project_detail' project.pk %}"
+           class="px-4 py-2 rounded-lg border border-outline-variant text-on-surface-variant hover:bg-surface-container transition-colors flex items-center gap-2">
+          <span class="material-symbols-outlined text-sm">arrow_back</span> {{ project.name }}
+        </a>
       {% endif %}
     </div>
 
-    {% if project %}
-      <p class="text-muted small">
-        Réajustement du projet « {{ project.name }} » : l'assistant tient compte
-        de ses tâches existantes et te proposera de nouvelles tâches.
-      </p>
-    {% endif %}
+    <!-- Fil de discussion -->
+    <div id="chat-log" class="flex-1 overflow-y-auto bg-surface-container-lowest rounded-xl shadow-sm p-4 md:p-6 mb-3 flex flex-col gap-4"></div>
 
-    {# Fil de discussion #}
-    <div id="chat-log" class="card shadow-sm mb-3 p-3"
-         style="min-height: 320px; max-height: 55vh; overflow-y: auto;"></div>
-
-    {# Récapitulatif de la proposition (affiché quand ready_to_confirm) #}
-    <div id="proposal" class="card shadow-sm mb-3 d-none">
-      <div class="card-header fw-semibold">Plan proposé</div>
-      <div class="card-body">
-        <h3 class="h6" id="proposal-project"></h3>
-        <p class="text-muted small mb-2" id="proposal-desc"></p>
-        <ul class="list-group list-group-flush mb-3" id="proposal-tasks"></ul>
-        <button type="button" class="btn btn-success" id="confirm-btn">
+    <!-- Récapitulatif de la proposition -->
+    <div id="proposal" class="hidden bg-surface-container-lowest rounded-xl shadow-sm border-l-4 border-l-primary p-6 mb-3">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="material-symbols-outlined text-primary">task_alt</span>
+        <h2 class="font-headline-lg-mobile text-headline-lg-mobile font-bold" id="proposal-project"></h2>
+      </div>
+      <p class="text-on-surface-variant text-body-md mb-4" id="proposal-desc"></p>
+      <ul class="space-y-2 mb-4" id="proposal-tasks"></ul>
+      <div class="flex flex-wrap items-center gap-3">
+        <button type="button" id="confirm-btn"
+                class="bg-tertiary text-on-tertiary px-6 py-3 rounded-lg font-bold hover:opacity-90 transition-all">
           Confirmer et créer
         </button>
-        <span class="small text-muted ms-2">
-          Tu peux aussi continuer à écrire pour demander des modifications.
-        </span>
+        <span class="text-on-surface-variant text-label-sm">Tu peux aussi continuer à écrire pour demander des modifications.</span>
       </div>
     </div>
 
-    {# Zone de message d'erreur #}
-    <div id="chat-error" class="alert alert-danger d-none" role="alert"></div>
+    <!-- Message d'erreur -->
+    <div id="chat-error" class="hidden rounded-xl px-4 py-3 bg-error/10 text-error border border-error/20 mb-3" role="alert"></div>
 
-    {# Saisie #}
-    <form id="chat-form" class="d-flex gap-2">
-      <input type="text" id="chat-input" class="form-control"
-             placeholder="Écris ton message..." autocomplete="off" autofocus>
-      <button type="submit" class="btn btn-primary" id="send-btn">Envoyer</button>
+    <!-- Saisie -->
+    <form id="chat-form" class="bg-surface-container-lowest rounded-2xl shadow-sm p-2 flex items-end gap-2 focus-within:ring-2 focus-within:ring-primary/40 transition-all">
+      <textarea id="chat-input" rows="1" autocomplete="off" autofocus
+                class="flex-1 bg-transparent border-none focus:ring-0 resize-none py-3 px-3 max-h-40"
+                placeholder="Écris ton message..."></textarea>
+      <button type="submit" id="send-btn"
+              class="w-11 h-11 bg-primary text-on-primary rounded-xl flex items-center justify-center hover:opacity-90 active:scale-95 transition-all flex-shrink-0">
+        <span class="material-symbols-outlined">send</span>
+      </button>
     </form>
   </div>
 
@@ -58,7 +67,6 @@
     const rawProjectId = root.dataset.projectId;
     const projectId = rawProjectId ? parseInt(rawProjectId, 10) : null;
     const csrfToken = "{{ csrf_token }}";
-
     const PRIORITY_LABELS = { basse: "Basse", moyenne: "Moyenne", haute: "Haute" };
 
     const log = document.getElementById("chat-log");
@@ -69,9 +77,7 @@
     const proposalBox = document.getElementById("proposal");
     const confirmBtn = document.getElementById("confirm-btn");
 
-    // Historique de conversation : vit ici, renvoyé entier à chaque appel.
     const messages = [];
-    // Dernière proposition prête à être créée.
     let currentProposal = null;
 
     function escapeHtml(value) {
@@ -85,31 +91,32 @@
       if (linkUrl) {
         errorBox.appendChild(document.createTextNode(" "));
         const a = document.createElement("a");
-        // URL interne construite côté client (/projets/<id>/), id numérique.
         a.href = linkUrl;
+        a.className = "underline font-bold";
         a.textContent = linkLabel || linkUrl;
         errorBox.appendChild(a);
       }
-      errorBox.classList.remove("d-none");
+      errorBox.classList.remove("hidden");
     }
-    function hideError() {
-      errorBox.textContent = "";
-      errorBox.classList.add("d-none");
-    }
+    function hideError() { errorBox.textContent = ""; errorBox.classList.add("hidden"); }
 
     function addBubble(role, content) {
+      const isUser = role === "user";
       const wrap = document.createElement("div");
-      wrap.className =
-        "d-flex mb-2 " + (role === "user" ? "justify-content-end" : "justify-content-start");
+      wrap.className = "flex gap-3 max-w-2xl " + (isUser ? "self-end flex-row-reverse" : "self-start");
+
+      const avatar = document.createElement("div");
+      avatar.className = "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 " +
+        (isUser ? "bg-surface-container-highest text-on-surface-variant" : "bg-secondary text-on-secondary");
+      avatar.innerHTML = '<span class="material-symbols-outlined text-sm">' + (isUser ? "person" : "smart_toy") + '</span>';
+
       const bubble = document.createElement("div");
-      bubble.className =
-        "p-2 rounded " +
-        (role === "user" ? "bg-primary text-white" : "bg-light border");
-      bubble.style.maxWidth = "80%";
-      // pre-wrap : conserve les retours à la ligne du message sans autoriser de
-      // HTML (le contenu est échappé).
-      bubble.style.whiteSpace = "pre-wrap";
+      bubble.className = (isUser
+        ? "bg-primary text-on-primary rounded-2xl rounded-tr-sm"
+        : "bg-surface-container text-on-surface rounded-2xl rounded-tl-sm") + " p-4 whitespace-pre-wrap";
       bubble.innerHTML = escapeHtml(content);
+
+      wrap.appendChild(avatar);
       wrap.appendChild(bubble);
       log.appendChild(wrap);
       log.scrollTop = log.scrollHeight;
@@ -124,25 +131,23 @@
 
     function renderProposal(proposal) {
       currentProposal = proposal;
-      document.getElementById("proposal-project").textContent =
-        proposal.project.name;
-      document.getElementById("proposal-desc").textContent =
-        proposal.project.description || "";
+      document.getElementById("proposal-project").textContent = proposal.project.name;
+      document.getElementById("proposal-desc").textContent = proposal.project.description || "";
       const list = document.getElementById("proposal-tasks");
       list.innerHTML = proposal.tasks.map(function (t) {
-        const due = t.due_date
-          ? escapeHtml(t.due_date)
-          : "<span class=\"text-muted\">sans échéance</span>";
+        const due = t.due_date ? escapeHtml(t.due_date) : "<span class=\"text-on-surface-variant\">sans échéance</span>";
         const priority = PRIORITY_LABELS[t.priority] || escapeHtml(t.priority);
         return (
-          '<li class="list-group-item">' +
-            "<strong>" + escapeHtml(t.title) + "</strong> " +
-            '<span class="badge bg-secondary">' + priority + "</span> " +
-            '<span class="small text-muted">' + due + "</span>" +
-          "</li>"
+          '<li class="flex items-center justify-between p-3 bg-surface-container-low rounded-lg border border-outline-variant/30">' +
+            '<span class="font-body-md font-medium text-on-surface">' + escapeHtml(t.title) + '</span>' +
+            '<span class="flex items-center gap-2">' +
+              '<span class="px-2 py-0.5 rounded-full text-xs bg-surface-container-high text-on-surface-variant">' + priority + '</span>' +
+              '<span class="text-xs text-on-surface-variant">' + due + '</span>' +
+            '</span>' +
+          '</li>'
         );
       }).join("");
-      proposalBox.classList.remove("d-none");
+      proposalBox.classList.remove("hidden");
     }
 
     async function sendMessage(text) {
@@ -155,10 +160,7 @@
       try {
         const response = await fetch("/api/chat/", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-CSRFToken": csrfToken,
-          },
+          headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken },
           body: JSON.stringify({ messages: messages, project_id: projectId }),
         });
         loading.remove();
@@ -174,8 +176,7 @@
         if (data.ready_to_confirm && data.proposal) {
           renderProposal(data.proposal);
         } else {
-          // Une nouvelle réponse non prête invalide un ancien récap.
-          proposalBox.classList.add("d-none");
+          proposalBox.classList.add("hidden");
           currentProposal = null;
         }
       } catch (err) {
@@ -191,10 +192,7 @@
     async function postJson(url, body) {
       const response = await fetch(url, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-CSRFToken": csrfToken,
-        },
+        headers: { "Content-Type": "application/json", "X-CSRFToken": csrfToken },
         body: JSON.stringify(body),
       });
       const data = await response.json().catch(function () { return {}; });
@@ -209,38 +207,29 @@
       try {
         let targetProjectId = projectId;
         let createdNew = false;
-
-        // Nouveau projet : le créer d'abord (D1, 2 appels séparés).
         if (targetProjectId === null) {
           const proj = await postJson("/api/projects/", {
             name: currentProposal.project.name,
             description: currentProposal.project.description || "",
           });
           if (!proj.ok) {
-            const msg =
-              proj.data.name ? proj.data.name[0] : "La création du projet a échoué.";
-            showError(msg);
+            showError(proj.data.name ? proj.data.name[0] : "La création du projet a échoué.");
             return;
           }
           targetProjectId = proj.data.id;
           createdNew = true;
         }
-
         const conf = await postJson("/api/tasks/confirm/", {
           project_id: targetProjectId,
           tasks: currentProposal.tasks,
         });
         if (!conf.ok) {
-          // Message distinct selon qu'on vient de créer le projet (non-atomique)
-          // ou qu'on réajuste un projet préexistant. Lien cliquable vers le
-          // projet, récupérable dans les deux cas.
           const msg = createdNew
             ? "Le projet a été créé mais l'ajout des tâches a échoué."
             : "L'ajout des tâches a échoué.";
           showError(msg, "/projets/" + targetProjectId + "/", "Ouvrir le projet");
           return;
         }
-        // Succès complet : redirection vers le projet.
         window.location.href = "/projets/" + targetProjectId + "/";
       } catch (err) {
         showError("Impossible de contacter le serveur. Vérifie ta connexion.");
@@ -250,22 +239,28 @@
       }
     }
 
+    // Auto-resize du textarea
+    input.addEventListener("input", function () {
+      this.style.height = "auto";
+      this.style.height = this.scrollHeight + "px";
+    });
+    // Entrée = envoyer (Shift+Entrée = nouvelle ligne)
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
+    });
     form.addEventListener("submit", function (e) {
       e.preventDefault();
       const text = input.value.trim();
       if (!text) return;
       input.value = "";
+      input.style.height = "auto";
       sendMessage(text);
     });
     confirmBtn.addEventListener("click", confirmProposal);
 
-    // Message d'accueil (côté front, sans appel API) pour amorcer.
-    addBubble(
-      "assistant",
-      projectId === null
-        ? "Bonjour ! Décris-moi le projet que tu veux organiser et je t'aiderai à le planifier."
-        : "Bonjour ! Dis-moi comment tu veux faire évoluer ce projet et je te proposerai de nouvelles tâches."
-    );
+    addBubble("assistant", projectId === null
+      ? "Salut ! Décris-moi le projet que tu veux organiser et je te prépare un plan de tâches."
+      : "Salut ! Dis-moi comment faire évoluer ce projet et je te proposerai de nouvelles tâches.");
   })();
   </script>
 {% endblock %}

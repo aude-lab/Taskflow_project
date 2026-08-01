@@ -12,15 +12,17 @@ from ..models import Task
 
 register = template.Library()
 
+# Classes de pastille Tailwind (paires fond/texte du design system Material 3).
+_DEFAULT_BADGE = "bg-surface-container-high text-on-surface-variant"
 STATUS_BADGE = {
-    Task.Status.TODO: "secondary",
-    Task.Status.IN_PROGRESS: "primary",
-    Task.Status.DONE: "success",
+    Task.Status.TODO: "bg-surface-container-high text-on-surface-variant",
+    Task.Status.IN_PROGRESS: "bg-secondary-fixed text-on-secondary-fixed",
+    Task.Status.DONE: "bg-tertiary-container text-on-tertiary-container",
 }
 PRIORITY_BADGE = {
-    Task.Priority.LOW: "secondary",
-    Task.Priority.MEDIUM: "warning",
-    Task.Priority.HIGH: "danger",
+    Task.Priority.LOW: "bg-surface-variant text-on-surface-variant",
+    Task.Priority.MEDIUM: "bg-tertiary-fixed text-on-tertiary-fixed",
+    Task.Priority.HIGH: "bg-error-container text-on-error-container",
 }
 
 
@@ -36,7 +38,7 @@ def _label(enum, value):
 @register.inclusion_tag("tasks/_badge.html")
 def status_badge(value):
     """Pastille colorée du statut ; libellé tiré du modèle."""
-    return {"label": _label(Task.Status, value), "css": STATUS_BADGE.get(value, "secondary")}
+    return {"label": _label(Task.Status, value), "css": STATUS_BADGE.get(value, _DEFAULT_BADGE)}
 
 
 @register.inclusion_tag("tasks/_badge.html")
@@ -44,7 +46,7 @@ def priority_badge(value):
     """Pastille colorée de la priorité ; libellé tiré du modèle."""
     return {
         "label": _label(Task.Priority, value),
-        "css": PRIORITY_BADGE.get(value, "secondary"),
+        "css": PRIORITY_BADGE.get(value, _DEFAULT_BADGE),
     }
 
 

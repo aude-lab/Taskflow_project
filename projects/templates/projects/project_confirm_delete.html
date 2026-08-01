@@ -3,36 +3,26 @@
 {% block title %}Supprimer {{ project.name }} — TaskFlow{% endblock %}
 
 {% block content %}
-  <div class="row justify-content-center">
-    <div class="col-md-7">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <h1 class="h4 mb-3">Supprimer « {{ project.name }} » ?</h1>
+  <div class="max-w-2xl mx-auto">
+    <div class="bg-surface-container-lowest rounded-xl shadow-sm p-6 md:p-8">
+      <h1 class="font-headline-lg-mobile text-headline-lg-mobile font-bold mb-4">Supprimer « {{ project.name }} » ?</h1>
 
-          {% if task_count %}
-            <div class="alert alert-warning">
-              Ce projet contient <strong>{{ task_count }}</strong>
-              tâche{{ task_count|pluralize }}, qui
-              {{ task_count|pluralize:"sera,seront" }} également supprimée{{ task_count|pluralize }}.
-            </div>
-          {% else %}
-            <p class="text-muted">Ce projet ne contient aucune tâche.</p>
-          {% endif %}
-
-          <p>Cette action est irréversible.</p>
-
-          <form method="post">
-            {% csrf_token %}
-            <div class="d-flex gap-2">
-              <button type="submit" class="btn btn-danger">
-                Supprimer définitivement
-              </button>
-              <a class="btn btn-outline-secondary"
-                 href="{% url 'project_list' %}">Annuler</a>
-            </div>
-          </form>
+      {% if task_count %}
+        <div class="rounded-xl px-4 py-3 bg-secondary/10 text-secondary border border-secondary/20 mb-4">
+          Ce projet contient <strong>{{ task_count }}</strong> tâche{{ task_count|pluralize }}, qui
+          {{ task_count|pluralize:"sera,seront" }} également supprimée{{ task_count|pluralize }}.
         </div>
-      </div>
+      {% else %}
+        <p class="text-on-surface-variant mb-4">Ce projet ne contient aucune tâche.</p>
+      {% endif %}
+
+      <p class="mb-6">Cette action est irréversible.</p>
+
+      <form method="post" class="flex gap-3">
+        {% csrf_token %}
+        <button type="submit" class="bg-error text-on-error px-6 py-3 rounded-lg font-bold hover:opacity-90 transition-all">Supprimer définitivement</button>
+        <a href="{% url 'project_list' %}" class="px-6 py-3 rounded-lg border border-outline-variant text-on-surface-variant hover:bg-surface-container transition-colors">Annuler</a>
+      </form>
     </div>
   </div>
 {% endblock %}
