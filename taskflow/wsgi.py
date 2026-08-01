@@ -14,3 +14,8 @@ from django.core.wsgi import get_wsgi_application
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'taskflow.settings')
 
 application = get_wsgi_application()
+
+# Vercel (runtime Python serverless) recherche une variable `app` exposant le
+# callable WSGI. Alias de `application`, sans effet en local ni sous un serveur
+# WSGI classique.
+app = application
