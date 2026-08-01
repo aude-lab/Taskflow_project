@@ -1628,6 +1628,26 @@ class ChatAPITestCase(APITestCase):
         system_content = kwargs["messages"][0]["content"]
         self.assertIn("Tâche existante A", system_content)
 
+    def test_chat_injects_current_date_in_system_prompt(self):
+        """La date du jour (serveur) figure dans le prompt système envoyé à
+        OpenAI, pour résoudre les dates relatives sans inventer de date passée."""
+        import json
+        from unittest.mock import patch
+
+        from django.utils import timezone
+
+        content = json.dumps(
+            {"reply": "ok", "ready_to_confirm": False, "proposal": None}
+        )
+        client = self._openai_returning(content)
+        self.client.force_authenticate(self.alice)
+        with patch("tasks.ai.OpenAI", return_value=client):
+            self._post()
+        _, kwargs = client.chat.completions.create.call_args
+        system_content = kwargs["messages"][0]["content"]
+        self.assertEqual(kwargs["messages"][0]["role"], "system")
+        self.assertIn(timezone.localdate().isoformat(), system_content)
+
     def test_chat_project_of_another_user_returns_404(self):
         from unittest.mock import patch
 
