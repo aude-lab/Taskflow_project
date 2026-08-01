@@ -42,16 +42,20 @@ ALLOWED_HOSTS = [
     for host in os.environ.get('ALLOWED_HOSTS', '').split(',')
     if host.strip()
 ]
-# En prod serverless (Vercel), le domaine est *.vercel.app : on l'autorise
-# toujours, en plus des hôtes fournis par l'environnement.
-ALLOWED_HOSTS += ['.vercel.app']
-if not ALLOWED_HOSTS or ALLOWED_HOSTS == ['.vercel.app']:
+# En prod, on autorise toujours les domaines des plateformes d'hébergement
+# (Railway, Render, Vercel), en plus des hôtes fournis par l'environnement.
+_PLATFORM_HOSTS = ['.up.railway.app', '.railway.app', '.onrender.com', '.vercel.app']
+ALLOWED_HOSTS += _PLATFORM_HOSTS
+if set(ALLOWED_HOSTS) <= set(_PLATFORM_HOSTS):
     ALLOWED_HOSTS += ['localhost', '127.0.0.1']
 
 # Django 4+ exige des origines de confiance pour les POST cross-origin en HTTPS
-# (connexion, formulaires, fetch de l'assistant). On fait confiance au domaine
-# Vercel et à toute origine fournie par l'environnement.
-CSRF_TRUSTED_ORIGINS = ['https://*.vercel.app'] + [
+# (connexion, formulaires, fetch de l'assistant). On fait confiance aux domaines
+# d'hébergement et à toute origine fournie par l'environnement.
+CSRF_TRUSTED_ORIGINS = [
+    'https://*.up.railway.app', 'https://*.railway.app',
+    'https://*.onrender.com', 'https://*.vercel.app',
+] + [
     origin.strip()
     for origin in os.environ.get('CSRF_TRUSTED_ORIGINS', '').split(',')
     if origin.strip()
@@ -128,9 +132,11 @@ if DATABASE_URL:
     DATABASES = {
         'default': dj_database_url.parse(
             DATABASE_URL,
-            # Serverless : pas de connexions persistantes entre invocations.
-            conn_max_age=0,
-            ssl_require=True,
+            # Serveur persistant (Render/gunicorn) : on réutilise les connexions.
+            conn_max_age=600,
+            # On ne force pas le SSL ici : les URL managées (Neon, Vercel) le
+            # portent déjà via `sslmode=require` ; la base interne de Render, elle,
+            # n'en a pas besoin. Forcer casserait ce dernier cas.
         )
     }
 else:
