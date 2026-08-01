@@ -27,6 +27,3 @@ media/
 
 # Maquettes de design (référence locale, non versionnée)
 maquette/
-
-# Build statique Vercel
-staticfiles_build/
