@@ -130,12 +130,16 @@ if DATABASE_URL:
         )
     }
 else:
+    # `.get` avec valeurs par défaut : `collectstatic` au build importe les
+    # settings sans qu'une base soit forcément configurée ; il ne s'y connecte
+    # pas, donc on évite un KeyError qui casserait le build. En local, les
+    # variables DB_* du .env priment.
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.environ['DB_NAME'],
-            'USER': os.environ['DB_USER'],
-            'PASSWORD': os.environ['DB_PASSWORD'],
+            'NAME': os.environ.get('DB_NAME', 'taskflow'),
+            'USER': os.environ.get('DB_USER', 'taskflow'),
+            'PASSWORD': os.environ.get('DB_PASSWORD', ''),
             'HOST': os.environ.get('DB_HOST', 'localhost'),
             'PORT': os.environ.get('DB_PORT', '5432'),
         }
